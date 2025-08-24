@@ -8,6 +8,12 @@ import { Layout } from "@/components/Layout";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
+import Compare from "./pages/Compare";
+import Uploads from "./pages/Uploads";
+import WhatsApp from "./pages/WhatsApp";
+import Alerts from "./pages/Alerts";
+import Vendors from "./pages/Vendors";
+import Settings from "./pages/Settings";
 
 const queryClient = new QueryClient();
 
@@ -21,12 +27,12 @@ const App = () => (
           <Routes>
             <Route path="/auth" element={<Auth />} />
             <Route path="/" element={<Layout><Index /></Layout>} />
-            <Route path="/compare" element={<Layout><div className="p-8 text-center">مقایسه قیمت‌ها - در حال توسعه</div></Layout>} />
-            <Route path="/ingest/uploads" element={<Layout><div className="p-8 text-center">آپلود فایل - در حال توسعه</div></Layout>} />
-            <Route path="/ingest/whatsapp" element={<Layout><div className="p-8 text-center">دریافت از واتس‌اپ - در حال توسعه</div></Layout>} />
-            <Route path="/alerts" element={<Layout><div className="p-8 text-center">هشدار قیمت - در حال توسعه</div></Layout>} />
-            <Route path="/vendors" element={<Layout><div className="p-8 text-center">فروشنده‌ها - در حال توسعه</div></Layout>} />
-            <Route path="/settings" element={<Layout><div className="p-8 text-center">تنظیمات - در حال توسعه</div></Layout>} />
+            <Route path="/compare" element={<Layout><Compare /></Layout>} />
+            <Route path="/ingest/uploads" element={<Layout><Uploads /></Layout>} />
+            <Route path="/ingest/whatsapp" element={<Layout><WhatsApp /></Layout>} />
+            <Route path="/alerts" element={<Layout><Alerts /></Layout>} />
+            <Route path="/vendors" element={<Layout><Vendors /></Layout>} />
+            <Route path="/settings" element={<Layout><Settings /></Layout>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
