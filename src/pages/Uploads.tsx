@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,6 +25,23 @@ export default function Uploads() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+
+  // Get user's org_id
+  const { data: profile } = useQuery({
+    queryKey: ['profile', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('org_id')
+        .eq('id', user.id)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user?.id
+  });
 
   const { data: uploads, isLoading } = useQuery({
     queryKey: ['uploads'],
@@ -59,6 +77,8 @@ export default function Uploads() {
     mutationFn: async (file: File) => {
       setUploading(true);
       
+      if (!user?.id || !profile?.org_id) throw new Error('کاربر وارد نشده است');
+      
       // Upload file to storage (if storage is configured)
       const fileExt = file.name.split('.').pop();
       const fileName = `${Date.now()}.${fileExt}`;
@@ -71,6 +91,7 @@ export default function Uploads() {
           filename: file.name,
           mime_type: file.type,
           storage_path: filePath,
+          org_id: profile.org_id,
           row_count: 0,
           ocr_status: 'queued'
         })
@@ -122,7 +143,7 @@ export default function Uploads() {
         .from('uploads')
         .update({ 
           row_count: sampleOcrData.length,
-          ocr_status: 'completed'
+          ocr_status: 'done'
         })
         .eq('id', upload.id);
 
@@ -165,7 +186,7 @@ export default function Uploads() {
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'completed':
+      case 'done':
         return <CheckCircle className="w-4 h-4 text-green-600" />;
       case 'failed':
         return <XCircle className="w-4 h-4 text-red-600" />;
@@ -178,7 +199,7 @@ export default function Uploads() {
 
   const getStatusText = (status: string) => {
     switch (status) {
-      case 'completed':
+      case 'done':
         return 'تکمیل شده';
       case 'failed':
         return 'خطا';

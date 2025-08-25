@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -44,6 +45,23 @@ export default function Vendors() {
   const [address, setAddress] = useState('');
   const [website, setWebsite] = useState('');
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+
+  // Get user's org_id
+  const { data: profile } = useQuery({
+    queryKey: ['profile', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('org_id')
+        .eq('id', user.id)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user?.id
+  });
 
   const { data: vendors, isLoading } = useQuery({
     queryKey: ['vendors'],
@@ -103,10 +121,14 @@ export default function Vendors() {
 
   const createVendorMutation = useMutation({
     mutationFn: async () => {
+      if (!vendorName.trim()) throw new Error('نام فروشنده الزامی است');
+      if (!user?.id || !profile?.org_id) throw new Error('کاربر وارد نشده است');
+      
       const { data, error } = await supabase
         .from('vendors')
         .insert({
           name: vendorName,
+          org_id: profile.org_id,
           is_official: isOfficial,
           trust_score: trustScore,
           contact_info: {

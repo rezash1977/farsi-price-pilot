@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -39,6 +40,23 @@ export default function WhatsApp() {
   const [webhookUrl, setWebhookUrl] = useState('');
   const [apiToken, setApiToken] = useState('');
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+
+  // Get user's org_id
+  const { data: profile } = useQuery({
+    queryKey: ['profile', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('org_id')
+        .eq('id', user.id)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user?.id
+  });
 
   const { data: integrations, isLoading: integrationsLoading } = useQuery({
     queryKey: ['integrations', 'whatsapp'],
@@ -87,10 +105,13 @@ export default function WhatsApp() {
 
   const createIntegrationMutation = useMutation({
     mutationFn: async () => {
+      if (!user?.id || !profile?.org_id) throw new Error('کاربر وارد نشده است');
+      
       const { data, error } = await supabase
         .from('integrations')
         .insert({
           type: 'whatsapp',
+          org_id: profile.org_id,
           active: true,
           config: {
             phone_number: phoneNumber,
@@ -139,10 +160,13 @@ export default function WhatsApp() {
 
   const simulateMessageMutation = useMutation({
     mutationFn: async () => {
+      if (!profile?.org_id) throw new Error('کاربر وارد نشده است');
+      
       // Simulate receiving a WhatsApp message with price information
       const sampleMessages = [
         {
           chat_id: `chat_${Date.now()}`,
+          org_id: profile.org_id,
           sender: '+98912xxxxxxx',
           text: 'سلام، iPhone 15 Pro 256GB آبی تیتانیوم 48,500,000 تومان موجود هست',
           has_media: false,
@@ -150,6 +174,7 @@ export default function WhatsApp() {
         },
         {
           chat_id: `chat_${Date.now() + 1}`,
+          org_id: profile.org_id,
           sender: '+98913xxxxxxx',
           text: 'Galaxy S24 Ultra 512GB مشکی 42,000,000 تومان فروش فوری',
           has_media: true,
@@ -176,6 +201,7 @@ export default function WhatsApp() {
             .from('media_files')
             .insert({
               message_id: messageData.id,
+              org_id: profile.org_id,
               storage_path: '/media/sample_price_image.jpg',
               mime_type: 'image/jpeg',
               ocr_status: 'queued'

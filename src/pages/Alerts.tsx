@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -50,6 +51,23 @@ export default function Alerts() {
   const [threshold, setThreshold] = useState('');
   const [condition, setCondition] = useState<'lt' | 'lte' | 'eq'>('lt');
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+
+  // Get user's org_id
+  const { data: profile } = useQuery({
+    queryKey: ['profile', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('org_id')
+        .eq('id', user.id)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user?.id
+  });
 
   const { data: alerts, isLoading: alertsLoading } = useQuery({
     queryKey: ['alerts'],
@@ -116,10 +134,15 @@ export default function Alerts() {
 
   const createAlertMutation = useMutation({
     mutationFn: async () => {
+      if (!selectedVariantId) throw new Error('لطفاً یک دستگاه انتخاب کنید');
+      if (!user?.id || !profile?.org_id) throw new Error('کاربر وارد نشده است');
+      
       const { data, error } = await supabase
         .from('alerts')
         .insert({
           variant_id: selectedVariantId,
+          user_id: user.id,
+          org_id: profile.org_id,
           threshold_toman: parseFloat(threshold),
           condition,
           active: true
@@ -139,7 +162,7 @@ export default function Alerts() {
       setIsCreateDialogOpen(false);
       setSelectedVariantId('');
       setThreshold('');
-      setCondition('below');
+      setCondition('lt');
     },
     onError: () => {
       toast({
@@ -184,11 +207,14 @@ export default function Alerts() {
 
   const simulateAlertMutation = useMutation({
     mutationFn: async (alertId: string) => {
+      if (!profile?.org_id) throw new Error('کاربر وارد نشده است');
+      
       // Create a sample notification
       const { error } = await supabase
         .from('notifications')
         .insert({
           alert_id: alertId,
+          org_id: profile.org_id,
           channel: 'email',
           status: 'sent',
           payload: {
@@ -230,13 +256,28 @@ export default function Alerts() {
   };
 
   const getConditionText = (condition: string) => {
-    return condition === 'below' ? 'کمتر از' : 'بیشتر از';
+    switch (condition) {
+      case 'lt':
+        return 'کمتر از';
+      case 'lte':
+        return 'کمتر یا مساوی';
+      case 'eq':
+        return 'برابر با';
+      default:
+        return 'کمتر از';
+    }
   };
 
   const getConditionIcon = (condition: string) => {
-    return condition === 'below' ? 
-      <TrendingDown className="w-4 h-4 text-green-600" /> : 
-      <TrendingUp className="w-4 h-4 text-red-600" />;
+    switch (condition) {
+      case 'lt':
+      case 'lte':
+        return <TrendingDown className="w-4 h-4 text-green-600" />;
+      case 'eq':
+        return <TrendingUp className="w-4 h-4 text-blue-600" />;
+      default:
+        return <TrendingDown className="w-4 h-4 text-green-600" />;
+    }
   };
 
   return (
@@ -278,13 +319,14 @@ export default function Alerts() {
 
               <div className="space-y-2">
                 <Label>شرط هشدار</Label>
-                <Select value={condition} onValueChange={(value: 'below' | 'above') => setCondition(value)}>
+                <Select value={condition} onValueChange={(value: 'lt' | 'lte' | 'eq') => setCondition(value)}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="below">کمتر از</SelectItem>
-                    <SelectItem value="above">بیشتر از</SelectItem>
+                    <SelectItem value="lt">کمتر از</SelectItem>
+                    <SelectItem value="lte">کمتر یا مساوی</SelectItem>
+                    <SelectItem value="eq">برابر با</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
