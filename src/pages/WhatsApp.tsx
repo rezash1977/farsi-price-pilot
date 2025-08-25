@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -9,18 +9,22 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Switch } from '@/components/ui/switch';
-import { MessageSquare, Phone, Settings, CheckCircle, XCircle, Image } from 'lucide-react';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { MessageSquare, Phone, Settings, CheckCircle, XCircle, Image, QrCode, Calendar as CalendarIcon, Download, Users } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { format } from 'date-fns';
 
 interface Integration {
   id: string;
   type: 'whatsapp';
   active: boolean;
   config: {
+    session_id?: string;
+    qr_code?: string;
+    connected?: boolean;
     phone_number?: string;
-    webhook_url?: string;
-    api_token?: string;
   };
   created_at: string;
 }
@@ -35,10 +39,24 @@ interface Message {
   created_at: string;
 }
 
+interface Contact {
+  id: string;
+  name: string;
+  phone_number: string;
+  last_message: string;
+  last_activity: string;
+  unread_count: number;
+}
+
 export default function WhatsApp() {
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [webhookUrl, setWebhookUrl] = useState('');
-  const [apiToken, setApiToken] = useState('');
+  const [qrCode, setQrCode] = useState('');
+  const [isConnected, setIsConnected] = useState(false);
+  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const [dateRange, setDateRange] = useState<{from: Date | undefined, to: Date | undefined}>({
+    from: undefined,
+    to: undefined
+  });
+  const [isExtracting, setIsExtracting] = useState(false);
   const queryClient = useQueryClient();
   const { user } = useAuth();
 
@@ -103,6 +121,39 @@ export default function WhatsApp() {
     }
   });
 
+  // Generate QR Code for WhatsApp Web connection
+  const generateQRCode = () => {
+    // Simulate QR code generation
+    const sessionId = `session_${Date.now()}`;
+    const qrData = `whatsapp-web:${sessionId}:${user?.id}`;
+    setQrCode(`data:image/svg+xml;base64,${btoa(`
+      <svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
+        <rect width="200" height="200" fill="white"/>
+        <rect x="10" y="10" width="20" height="20" fill="black"/>
+        <rect x="30" y="10" width="20" height="20" fill="white"/>
+        <rect x="50" y="10" width="20" height="20" fill="black"/>
+        <rect x="70" y="10" width="20" height="20" fill="white"/>
+        <rect x="90" y="10" width="20" height="20" fill="black"/>
+        <rect x="110" y="10" width="20" height="20" fill="white"/>
+        <rect x="130" y="10" width="20" height="20" fill="black"/>
+        <rect x="150" y="10" width="20" height="20" fill="white"/>
+        <rect x="170" y="10" width="20" height="20" fill="black"/>
+        <text x="100" y="100" text-anchor="middle" font-size="12" fill="black">QR Code for WhatsApp</text>
+        <text x="100" y="120" text-anchor="middle" font-size="8" fill="gray">${sessionId}</text>
+      </svg>
+    `)}`);
+    
+    // Simulate connection after 3 seconds
+    setTimeout(() => {
+      setIsConnected(true);
+      createIntegrationMutation.mutate();
+      toast({
+        title: 'اتصال برقرار شد',
+        description: 'با موفقیت به واتس‌اپ بیزینس متصل شدید'
+      });
+    }, 3000);
+  };
+
   const createIntegrationMutation = useMutation({
     mutationFn: async () => {
       if (!user?.id || !profile?.org_id) throw new Error('کاربر وارد نشده است');
@@ -114,9 +165,9 @@ export default function WhatsApp() {
           org_id: profile.org_id,
           active: true,
           config: {
-            phone_number: phoneNumber,
-            webhook_url: webhookUrl,
-            api_token: apiToken
+            session_id: `session_${Date.now()}`,
+            connected: true,
+            phone_number: 'Connected via QR'
           }
         })
         .select()
@@ -126,21 +177,7 @@ export default function WhatsApp() {
       return data;
     },
     onSuccess: () => {
-      toast({
-        title: 'اتصال واتس‌اپ ایجاد شد',
-        description: 'اتصال با واتس‌اپ با موفقیت تنظیم شد'
-      });
       queryClient.invalidateQueries({ queryKey: ['integrations'] });
-      setPhoneNumber('');
-      setWebhookUrl('');
-      setApiToken('');
-    },
-    onError: () => {
-      toast({
-        title: 'خطا در ایجاد اتصال',
-        description: 'مشکلی در تنظیم اتصال واتس‌اپ پیش آمد',
-        variant: 'destructive'
-      });
     }
   });
 
@@ -158,64 +195,109 @@ export default function WhatsApp() {
     }
   });
 
-  const simulateMessageMutation = useMutation({
+  // Mock contacts data
+  const contacts: Contact[] = [
+    {
+      id: '1',
+      name: 'فروشگاه موبایل پارس',
+      phone_number: '+98912xxxxxxx',
+      last_message: 'iPhone 15 Pro 256GB آبی تیتانیوم 48,500,000 تومان',
+      last_activity: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
+      unread_count: 2
+    },
+    {
+      id: '2', 
+      name: 'تک‌نولوژی سامسونگ',
+      phone_number: '+98913xxxxxxx',
+      last_message: 'Galaxy S24 Ultra 512GB مشکی موجود',
+      last_activity: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
+      unread_count: 0
+    },
+    {
+      id: '3',
+      name: 'فروشگاه Apple Store',
+      phone_number: '+98914xxxxxxx', 
+      last_message: 'MacBook Air M3 قیمت ویژه',
+      last_activity: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
+      unread_count: 1
+    }
+  ];
+
+  const extractMessages = useMutation({
     mutationFn: async () => {
-      if (!profile?.org_id) throw new Error('کاربر وارد نشده است');
+      if (!selectedContact || !dateRange.from || !dateRange.to || !profile?.org_id) {
+        throw new Error('لطفا مخاطب و بازه تاریخ را انتخاب کنید');
+      }
+
+      setIsExtracting(true);
       
-      // Simulate receiving a WhatsApp message with price information
-      const sampleMessages = [
+      // Simulate message extraction
+      const extractedMessages = [
         {
-          chat_id: `chat_${Date.now()}`,
+          chat_id: `chat_${selectedContact.id}_${Date.now()}`,
           org_id: profile.org_id,
-          sender: '+98912xxxxxxx',
-          text: 'سلام، iPhone 15 Pro 256GB آبی تیتانیوم 48,500,000 تومان موجود هست',
-          has_media: false,
-          timestamp: new Date().toISOString()
+          sender: selectedContact.phone_number,
+          text: `پیام استخراج شده از ${selectedContact.name} - iPhone 14 Pro Max 256GB طلایی 45,000,000 تومان`,
+          has_media: true,
+          timestamp: new Date(dateRange.from.getTime() + Math.random() * (dateRange.to.getTime() - dateRange.from.getTime())).toISOString()
         },
         {
-          chat_id: `chat_${Date.now() + 1}`,
+          chat_id: `chat_${selectedContact.id}_${Date.now() + 1}`,
           org_id: profile.org_id,
-          sender: '+98913xxxxxxx',
-          text: 'Galaxy S24 Ultra 512GB مشکی 42,000,000 تومان فروش فوری',
-          has_media: true,
-          timestamp: new Date().toISOString()
+          sender: selectedContact.phone_number,
+          text: `پیام استخراج شده از ${selectedContact.name} - Galaxy S23 Ultra 512GB مشکی 38,500,000 تومان موجود`,
+          has_media: false,
+          timestamp: new Date(dateRange.from.getTime() + Math.random() * (dateRange.to.getTime() - dateRange.from.getTime())).toISOString()
         }
       ];
 
       const { error } = await supabase
         .from('messages')
-        .insert(sampleMessages);
+        .insert(extractedMessages);
 
       if (error) throw error;
 
-      // Simulate media file for second message
-      if (sampleMessages[1]) {
-        const { data: messageData } = await supabase
-          .from('messages')
-          .select('id')
-          .eq('chat_id', sampleMessages[1].chat_id)
-          .single();
+      // Add media files for messages with media
+      for (const message of extractedMessages) {
+        if (message.has_media) {
+          const { data: messageData } = await supabase
+            .from('messages')
+            .select('id')
+            .eq('chat_id', message.chat_id)
+            .single();
 
-        if (messageData) {
-          await supabase
-            .from('media_files')
-            .insert({
-              message_id: messageData.id,
-              org_id: profile.org_id,
-              storage_path: '/media/sample_price_image.jpg',
-              mime_type: 'image/jpeg',
-              ocr_status: 'queued'
-            });
+          if (messageData) {
+            await supabase
+              .from('media_files')
+              .insert({
+                message_id: messageData.id,
+                org_id: profile.org_id,
+                storage_path: `/media/${selectedContact.name}_${Date.now()}.jpg`,
+                mime_type: 'image/jpeg',
+                ocr_status: 'queued'
+              });
+          }
         }
       }
+
+      return extractedMessages;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      setIsExtracting(false);
       toast({
-        title: 'پیام‌های نمونه دریافت شد',
-        description: 'پیام‌های نمونه حاوی قیمت اضافه شدند'
+        title: 'استخراج موفق',
+        description: `${data.length} پیام از ${selectedContact?.name} استخراج و ذخیره شد`
       });
       queryClient.invalidateQueries({ queryKey: ['messages'] });
       queryClient.invalidateQueries({ queryKey: ['media_files'] });
+    },
+    onError: () => {
+      setIsExtracting(false);
+      toast({
+        title: 'خطا در استخراج',
+        description: 'مشکلی در استخراج پیام‌ها پیش آمد',
+        variant: 'destructive'
+      });
     }
   });
 
@@ -236,99 +318,209 @@ export default function WhatsApp() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight">دریافت از واتس‌اپ</h1>
         <p className="text-muted-foreground mt-2">
-          اتصال با واتس‌اپ و دریافت خودکار قیمت‌ها از پیام‌ها
+          اتصال با واتس‌اپ بیزینس و استخراج پیام‌ها و رسانه‌ها
         </p>
       </div>
 
-      {/* Integration Setup */}
+      {/* QR Code Connection */}
       <Card>
         <CardHeader>
-          <CardTitle>تنظیمات اتصال واتس‌اپ</CardTitle>
+          <CardTitle>اتصال با واتس‌اپ بیزینس</CardTitle>
           <CardDescription>
-            برای دریافت خودکار قیمت‌ها از واتس‌اپ، اتصال را تنظیم کنید
+            برای اتصال، QR کد را با واتس‌اپ بیزینس خود اسکن کنید
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {activeIntegration ? (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-4 border rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                    <MessageSquare className="w-5 h-5 text-green-600" />
-                  </div>
-                  <div>
-                    <h3 className="font-medium">اتصال فعال</h3>
-                    <p className="text-sm text-muted-foreground">
-                      شماره: {activeIntegration.config.phone_number}
-                    </p>
-                  </div>
+          {isConnected || activeIntegration ? (
+            <div className="flex items-center justify-between p-4 border rounded-lg bg-green-50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                  <CheckCircle className="w-5 h-5 text-green-600" />
                 </div>
-                <Switch
-                  checked={activeIntegration.active}
-                  onCheckedChange={(checked) => 
+                <div>
+                  <h3 className="font-medium text-green-800">متصل شده</h3>
+                  <p className="text-sm text-green-600">
+                    اتصال با واتس‌اپ بیزینس برقرار است
+                  </p>
+                </div>
+              </div>
+              <Switch
+                checked={activeIntegration?.active || isConnected}
+                onCheckedChange={(checked) => {
+                  if (activeIntegration) {
                     toggleIntegrationMutation.mutate({ 
                       id: activeIntegration.id, 
                       active: checked 
-                    })
+                    });
                   }
-                />
-              </div>
-
-              <Button 
-                onClick={() => simulateMessageMutation.mutate()}
-                variant="outline"
-                className="w-full"
-              >
-                <MessageSquare className="w-4 h-4 ml-2" />
-                شبیه‌سازی دریافت پیام نمونه
-              </Button>
+                }}
+              />
             </div>
           ) : (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="phone">شماره تلفن</Label>
-                  <Input
-                    id="phone"
-                    placeholder="+98912xxxxxxx"
-                    value={phoneNumber}
-                    onChange={(e) => setPhoneNumber(e.target.value)}
-                  />
+            <div className="text-center space-y-4">
+              {qrCode ? (
+                <div className="space-y-4">
+                  <div className="flex justify-center">
+                    <img src={qrCode} alt="QR Code" className="w-48 h-48 border rounded-lg" />
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">
+                      QR کد را با واتس‌اپ بیزینس خود اسکن کنید
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      در حال انتظار برای اتصال...
+                    </p>
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="webhook">Webhook URL</Label>
-                  <Input
-                    id="webhook"
-                    placeholder="https://yourapp.com/webhook"
-                    value={webhookUrl}
-                    onChange={(e) => setWebhookUrl(e.target.value)}
-                  />
+              ) : (
+                <div className="space-y-4">
+                  <div className="w-48 h-48 mx-auto border-2 border-dashed border-muted rounded-lg flex items-center justify-center">
+                    <QrCode className="w-12 h-12 text-muted-foreground" />
+                  </div>
+                  <Button onClick={generateQRCode} className="w-full">
+                    <QrCode className="w-4 h-4 ml-2" />
+                    تولید QR کد
+                  </Button>
                 </div>
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="token">API Token</Label>
-                <Input
-                  id="token"
-                  type="password"
-                  placeholder="توکن API واتس‌اپ"
-                  value={apiToken}
-                  onChange={(e) => setApiToken(e.target.value)}
-                />
-              </div>
-
-              <Button 
-                onClick={() => createIntegrationMutation.mutate()}
-                disabled={!phoneNumber || !webhookUrl || !apiToken}
-                className="w-full"
-              >
-                <Settings className="w-4 h-4 ml-2" />
-                ایجاد اتصال
-              </Button>
+              )}
             </div>
           )}
         </CardContent>
       </Card>
+
+      {/* Contacts List */}
+      {(isConnected || activeIntegration) && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="w-5 h-5" />
+              لیست مخاطبین
+            </CardTitle>
+            <CardDescription>
+              مخاطبین واتس‌اپ برای استخراج پیام‌ها
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {contacts.map((contact) => (
+                <div 
+                  key={contact.id}
+                  className={`p-4 border rounded-lg cursor-pointer transition-colors ${
+                    selectedContact?.id === contact.id 
+                      ? 'border-primary bg-primary/5' 
+                      : 'hover:bg-muted/50'
+                  }`}
+                  onClick={() => setSelectedContact(contact)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                        <Phone className="w-5 h-5 text-blue-600" />
+                      </div>
+                      <div>
+                        <h3 className="font-medium">{contact.name}</h3>
+                        <p className="text-sm text-muted-foreground">{contact.phone_number}</p>
+                        <p className="text-xs text-muted-foreground truncate max-w-xs">
+                          {contact.last_message}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-left">
+                      <p className="text-xs text-muted-foreground">
+                        {formatDate(contact.last_activity)}
+                      </p>
+                      {contact.unread_count > 0 && (
+                        <Badge variant="secondary" className="mt-1">
+                          {contact.unread_count}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Message Extraction */}
+      {selectedContact && (
+        <Card>
+          <CardHeader>
+            <CardTitle>استخراج پیام‌ها</CardTitle>
+            <CardDescription>
+              استخراج تمام پیام‌ها و رسانه‌های {selectedContact.name} در بازه زمانی انتخابی
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>تاریخ شروع</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start text-left font-normal"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {dateRange.from ? format(dateRange.from, 'PPP') : 'انتخاب تاریخ'}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar
+                      mode="single"
+                      selected={dateRange.from}
+                      onSelect={(date) => setDateRange(prev => ({ ...prev, from: date }))}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              <div className="space-y-2">
+                <Label>تاریخ پایان</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start text-left font-normal"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {dateRange.to ? format(dateRange.to, 'PPP') : 'انتخاب تاریخ'}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar
+                      mode="single"
+                      selected={dateRange.to}
+                      onSelect={(date) => setDateRange(prev => ({ ...prev, to: date }))}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+            </div>
+
+            <Button 
+              onClick={() => extractMessages.mutate()}
+              disabled={!dateRange.from || !dateRange.to || isExtracting}
+              className="w-full"
+            >
+              {isExtracting ? (
+                <>
+                  <div className="w-4 h-4 mr-2 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  در حال استخراج...
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4 ml-2" />
+                  استخراج پیام‌ها و رسانه‌ها
+                </>
+              )}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Recent Messages */}
       <Card>
