@@ -51,8 +51,6 @@ export function Layout({ children }: LayoutProps) {
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full">
-        <AppSidebar />
-        
         <div className="flex-1 flex flex-col">
           {/* Top Header */}
           <header className="h-16 border-b border-border bg-background flex items-center justify-between px-6">
@@ -111,6 +109,8 @@ export function Layout({ children }: LayoutProps) {
             {children}
           </main>
         </div>
+        
+        <AppSidebar />
       </div>
     </SidebarProvider>
   );

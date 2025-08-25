@@ -58,6 +58,7 @@ export function AppSidebar() {
     <Sidebar
       className={collapsed ? 'w-14' : 'w-64'}
       collapsible="icon"
+      side="right"
     >
       <SidebarContent>
         {/* App Header */}
@@ -83,14 +84,14 @@ export function AppSidebar() {
               {menuItems.map((item) => (
                 <SidebarMenuItem key={item.url}>
                   <SidebarMenuButton asChild>
-                    <NavLink 
-                      to={item.url} 
-                      end={item.url === '/'}
-                      className={getNavClass(item.url)}
-                    >
-                      <item.icon className="ml-3 h-4 w-4" />
-                      {!collapsed && <span>{item.title}</span>}
-                    </NavLink>
+                     <NavLink 
+                       to={item.url} 
+                       end={item.url === '/'}
+                       className={getNavClass(item.url)}
+                     >
+                       <item.icon className="mr-3 h-4 w-4" />
+                       {!collapsed && <span>{item.title}</span>}
+                     </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
