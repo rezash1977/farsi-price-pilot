@@ -1,6 +1,6 @@
 import { ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
-import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
+import { SidebarProvider, SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
@@ -19,8 +19,10 @@ interface LayoutProps {
   children: ReactNode;
 }
 
-export function Layout({ children }: LayoutProps) {
+function LayoutContent({ children }: LayoutProps) {
   const { user, signOut, loading } = useAuth();
+  const { state } = useSidebar();
+  const sidebarOpen = state === 'expanded';
 
   // Redirect to auth if not authenticated
   if (!loading && !user) {
@@ -49,15 +51,14 @@ export function Layout({ children }: LayoutProps) {
   };
 
   return (
-    <SidebarProvider>
-      <div className="min-h-screen flex w-full">
-        <div className="flex-1 flex flex-col">
+    <div className="min-h-screen flex w-full">
+      <div 
+        className={`flex-1 flex flex-col transition-all duration-300 ease-in-out ${
+          sidebarOpen ? 'mr-64' : 'mr-14'
+        }`}
+      >
           {/* Top Header */}
           <header className="h-16 border-b border-border bg-background flex items-center justify-between px-6">
-            <div className="flex items-center gap-4">
-              <SidebarTrigger />
-            </div>
-
             <div className="flex items-center gap-4">
               {/* Notifications */}
               <Button variant="ghost" size="icon" className="relative">
@@ -102,16 +103,27 @@ export function Layout({ children }: LayoutProps) {
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
+
+            <div className="flex items-center gap-4">
+              <SidebarTrigger />
+            </div>
           </header>
 
-          {/* Main Content */}
-          <main className="flex-1 p-6 overflow-auto">
-            {children}
-          </main>
-        </div>
-        
-        <AppSidebar />
+        {/* Main Content */}
+        <main className="flex-1 p-6 overflow-auto">
+          {children}
+        </main>
       </div>
+      
+      <AppSidebar />
+    </div>
+  );
+}
+
+export function Layout({ children }: LayoutProps) {
+  return (
+    <SidebarProvider>
+      <LayoutContent>{children}</LayoutContent>
     </SidebarProvider>
   );
 }
