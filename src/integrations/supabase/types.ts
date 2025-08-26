@@ -665,6 +665,48 @@ export type Database = {
           },
         ]
       }
+      whatsapp_sessions: {
+        Row: {
+          connected: boolean | null
+          connected_at: string | null
+          created_at: string
+          error_message: string | null
+          id: string
+          phone_number: string | null
+          qr_code: string | null
+          session_id: string
+          status: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          connected?: boolean | null
+          connected_at?: string | null
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          phone_number?: string | null
+          qr_code?: string | null
+          session_id: string
+          status?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          connected?: boolean | null
+          connected_at?: string | null
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          phone_number?: string | null
+          qr_code?: string | null
+          session_id?: string
+          status?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
