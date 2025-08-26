@@ -57,6 +57,8 @@ export default function WhatsApp() {
     to: undefined
   });
   const [isExtracting, setIsExtracting] = useState(false);
+  const [currentSession, setCurrentSession] = useState<string | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<'idle' | 'connecting' | 'connected' | 'failed'>('idle');
   const queryClient = useQueryClient();
   const { user } = useAuth();
 
@@ -121,37 +123,91 @@ export default function WhatsApp() {
     }
   });
 
-  // Generate QR Code for WhatsApp Web connection
-  const generateQRCode = () => {
-    // Simulate QR code generation
-    const sessionId = `session_${Date.now()}`;
-    const qrData = `whatsapp-web:${sessionId}:${user?.id}`;
-    setQrCode(`data:image/svg+xml;base64,${btoa(`
-      <svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
-        <rect width="200" height="200" fill="white"/>
-        <rect x="10" y="10" width="20" height="20" fill="black"/>
-        <rect x="30" y="10" width="20" height="20" fill="white"/>
-        <rect x="50" y="10" width="20" height="20" fill="black"/>
-        <rect x="70" y="10" width="20" height="20" fill="white"/>
-        <rect x="90" y="10" width="20" height="20" fill="black"/>
-        <rect x="110" y="10" width="20" height="20" fill="white"/>
-        <rect x="130" y="10" width="20" height="20" fill="black"/>
-        <rect x="150" y="10" width="20" height="20" fill="white"/>
-        <rect x="170" y="10" width="20" height="20" fill="black"/>
-        <text x="100" y="100" text-anchor="middle" font-size="12" fill="black">QR Code for WhatsApp</text>
-        <text x="100" y="120" text-anchor="middle" font-size="8" fill="gray">${sessionId}</text>
-      </svg>
-    `)}`);
-    
-    // Simulate connection after 3 seconds
-    setTimeout(() => {
-      setIsConnected(true);
-      createIntegrationMutation.mutate();
+  // Generate QR Code for WhatsApp Web connection using Puppeteer
+  const generateQRCode = async () => {
+    if (!user?.id) {
       toast({
-        title: 'اتصال برقرار شد',
-        description: 'با موفقیت به واتس‌اپ بیزینس متصل شدید'
+        title: 'خطا',
+        description: 'لطفا وارد حساب کاربری خود شوید',
+        variant: 'destructive'
       });
-    }, 3000);
+      return;
+    }
+
+    setConnectionStatus('connecting');
+    setQrCode('');
+
+    try {
+      const { data, error } = await supabase.functions.invoke('whatsapp-connect', {
+        body: {
+          action: 'generate_qr',
+          user_id: user.id
+        }
+      });
+
+      if (error) throw error;
+
+      setQrCode(data.qr_code);
+      setCurrentSession(data.session_id);
+      
+      // Start checking connection status
+      checkConnectionStatus(data.session_id);
+      
+      toast({
+        title: 'QR کد تولید شد',
+        description: 'QR کد را با واتس‌اپ بیزینس خود اسکن کنید'
+      });
+
+    } catch (error) {
+      console.error('Error generating QR code:', error);
+      setConnectionStatus('failed');
+      toast({
+        title: 'خطا در تولید QR کد',
+        description: 'مشکلی در اتصال به واتس‌اپ پیش آمد',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  // Check connection status periodically
+  const checkConnectionStatus = async (sessionId: string) => {
+    const checkStatus = async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('whatsapp-connect', {
+          body: {
+            action: 'check_status',
+            session_id: sessionId
+          }
+        });
+
+        if (error) throw error;
+
+        if (data.connected) {
+          setIsConnected(true);
+          setConnectionStatus('connected');
+          createIntegrationMutation.mutate();
+          toast({
+            title: 'اتصال برقرار شد',
+            description: `با موفقیت به واتس‌اپ بیزینس متصل شدید${data.phone_number ? ` - ${data.phone_number}` : ''}`
+          });
+        } else if (data.status === 'failed') {
+          setConnectionStatus('failed');
+          toast({
+            title: 'اتصال ناموفق',
+            description: 'اتصال به واتس‌اپ با خطا مواجه شد',
+            variant: 'destructive'
+          });
+        } else {
+          // Continue checking
+          setTimeout(checkStatus, 3000);
+        }
+      } catch (error) {
+        console.error('Error checking status:', error);
+        setConnectionStatus('failed');
+      }
+    };
+
+    setTimeout(checkStatus, 3000);
   };
 
   const createIntegrationMutation = useMutation({
@@ -368,7 +424,7 @@ export default function WhatsApp() {
                       QR کد را با واتس‌اپ بیزینس خود اسکن کنید
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      در حال انتظار برای اتصال...
+                      {connectionStatus === 'connecting' ? 'در حال بارگذاری واتس‌اپ وب...' : 'در حال انتظار برای اتصال...'}
                     </p>
                   </div>
                 </div>
@@ -377,9 +433,22 @@ export default function WhatsApp() {
                   <div className="w-48 h-48 mx-auto border-2 border-dashed border-muted rounded-lg flex items-center justify-center">
                     <QrCode className="w-12 h-12 text-muted-foreground" />
                   </div>
-                  <Button onClick={generateQRCode} className="w-full">
-                    <QrCode className="w-4 h-4 ml-2" />
-                    تولید QR کد
+                  <Button 
+                    onClick={generateQRCode} 
+                    className="w-full"
+                    disabled={connectionStatus === 'connecting'}
+                  >
+                    {connectionStatus === 'connecting' ? (
+                      <>
+                        <div className="w-4 h-4 ml-2 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                        در حال اتصال به واتس‌اپ...
+                      </>
+                    ) : (
+                      <>
+                        <QrCode className="w-4 h-4 ml-2" />
+                        تولید QR کد
+                      </>
+                    )}
                   </Button>
                 </div>
               )}
