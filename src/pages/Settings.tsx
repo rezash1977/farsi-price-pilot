@@ -177,11 +177,18 @@ export default function Settings() {
   };
 
   const formatDate = (date: string) => {
+    if (!date) return 'نامشخص';
+    
+    const parsedDate = new Date(date);
+    if (isNaN(parsedDate.getTime())) {
+      return 'تاریخ نامعتبر';
+    }
+    
     return new Intl.DateTimeFormat('fa-IR', {
       year: 'numeric',
       month: 'long',
       day: 'numeric'
-    }).format(new Date(date));
+    }).format(parsedDate);
   };
 
   return (
