@@ -61,7 +61,16 @@ function LayoutContent({ children }: LayoutProps) {
           <header className="h-16 border-b border-border bg-background flex items-center justify-between px-6">
             <div className="flex items-center gap-4">
               {/* Notifications */}
-              <Button variant="ghost" size="icon" className="relative">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="relative hover:bg-accent hover:text-accent-foreground"
+                onClick={() => {
+                  // TODO: Open notifications panel
+                  console.log('Notifications clicked');
+                }}
+                aria-label="اعلان‌ها"
+              >
                 <Bell className="h-5 w-5" />
                 <span className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-xs rounded-full h-5 w-5 flex items-center justify-center">
                   ۳
