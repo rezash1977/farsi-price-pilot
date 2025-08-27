@@ -532,7 +532,7 @@ export default function WhatsApp() {
                       className="w-full justify-start text-left font-normal"
                     >
                       <CalendarIcon className="mr-2 h-4 w-4" />
-                      {dateRange.from ? format(dateRange.from, 'PPP') : 'انتخاب تاریخ'}
+                      {dateRange.from && !isNaN(dateRange.from.getTime()) ? format(dateRange.from, 'PPP') : 'انتخاب تاریخ'}
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0">
@@ -555,7 +555,7 @@ export default function WhatsApp() {
                       className="w-full justify-start text-left font-normal"
                     >
                       <CalendarIcon className="mr-2 h-4 w-4" />
-                      {dateRange.to ? format(dateRange.to, 'PPP') : 'انتخاب تاریخ'}
+                      {dateRange.to && !isNaN(dateRange.to.getTime()) ? format(dateRange.to, 'PPP') : 'انتخاب تاریخ'}
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0">
