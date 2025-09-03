@@ -14,6 +14,8 @@ import WhatsApp from "./pages/WhatsApp";
 import Alerts from "./pages/Alerts";
 import Vendors from "./pages/Vendors";
 import Settings from "./pages/Settings";
+import PriceAnalysis from "./pages/PriceAnalysis";
+import ChatDataProcessor from "./pages/ChatDataProcessor";
 
 const queryClient = new QueryClient();
 
@@ -28,6 +30,8 @@ const App = () => (
             <Route path="/auth" element={<Auth />} />
             <Route path="/" element={<Layout><Index /></Layout>} />
             <Route path="/compare" element={<Layout><Compare /></Layout>} />
+            <Route path="/price-analysis" element={<Layout><PriceAnalysis /></Layout>} />
+            <Route path="/chat-data" element={<Layout><ChatDataProcessor /></Layout>} />
             <Route path="/ingest/uploads" element={<Layout><Uploads /></Layout>} />
             <Route path="/ingest/whatsapp" element={<Layout><WhatsApp /></Layout>} />
             <Route path="/alerts" element={<Layout><Alerts /></Layout>} />

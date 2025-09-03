@@ -27,6 +27,8 @@ import {
 const menuItems = [
   { title: 'داشبورد', url: '/', icon: Home },
   { title: 'مقایسه قیمت‌ها', url: '/compare', icon: BarChart3 },
+  { title: 'تحلیل قیمت‌ها', url: '/price-analysis', icon: TrendingUp },
+  { title: 'پردازش داده‌های چت', url: '/chat-data', icon: MessageSquare },
   { title: 'آپلود فایل', url: '/ingest/uploads', icon: Upload },
   { title: 'دریافت از واتس‌اپ', url: '/ingest/whatsapp', icon: MessageSquare },
   { title: 'هشدار قیمت', url: '/alerts', icon: Bell },
