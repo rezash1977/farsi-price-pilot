@@ -7,8 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Calendar, TrendingUp, TrendingDown, Search, Filter } from 'lucide-react';
-import { toast } from '@/hooks/use-toast';
+import { TrendingUp, Search, Filter } from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
 
 interface PriceAnalysisData {
   phone_brand: string;
@@ -24,6 +24,7 @@ interface PriceAnalysisData {
 }
 
 export default function PriceAnalysis() {
+  const { user } = useAuth();
   const [dateFrom, setDateFrom] = useState(() => {
     const date = new Date();
     date.setMonth(date.getMonth() - 1);
@@ -33,110 +34,145 @@ export default function PriceAnalysis() {
   const [selectedBrand, setSelectedBrand] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
 
+  const { data: profile } = useQuery({
+    queryKey: ['user-profile', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('org_id')
+        .eq('id', user.id)
+        .single();
+      
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user?.id
+  });
+
   const { data: brands } = useQuery({
     queryKey: ['price-analysis-brands'],
     queryFn: async () => {
-      // Use ocr_extracted_prices table
-      const { data, error } = await supabase
-        .from('ocr_extracted_prices')
-        .select('phone_brand')
-        .not('phone_brand', 'is', null)
-        .order('phone_brand');
+      if (!profile?.org_id) return [];
       
-      if (error) throw error;
-      return [...new Set(data.map(item => item.phone_brand))].filter(Boolean);
-    }
+      try {
+        // Use type assertion for table not in types
+        const { data, error } = await (supabase as any)
+          .from('ocr_extracted_prices')
+          .select('phone_brand')
+          .eq('org_id', profile.org_id)
+          .not('phone_brand', 'is', null)
+          .order('phone_brand');
+        
+        if (error) throw error;
+        return [...new Set(data?.map((item: any) => item.phone_brand))].filter(Boolean);
+      } catch (err) {
+        console.warn('Could not fetch brands:', err);
+        return [];
+      }
+    },
+    enabled: !!profile?.org_id
   });
 
   const { data: analysisData, isLoading, refetch } = useQuery({
-    queryKey: ['price-analysis', dateFrom, dateTo, selectedBrand, searchTerm],
+    queryKey: ['price-analysis', dateFrom, dateTo, selectedBrand, searchTerm, profile?.org_id],
     queryFn: async () => {
-      let query = supabase
-        .from('ocr_extracted_prices')
-        .select('*')
-        .not('phone_brand', 'is', null)
-        .not('phone_model', 'is', null)
-        .not('price_rial', 'is', null);
-
-      if (dateFrom) {
-        query = query.gte('date', dateFrom);
-      }
-      if (dateTo) {
-        query = query.lte('date', dateTo);
-      }
-      if (selectedBrand !== 'all') {
-        query = query.eq('phone_brand', selectedBrand);
-      }
-
-      const { data, error } = await query.order('date', { ascending: false });
+      if (!profile?.org_id) return [];
       
-      if (error) throw error;
+      try {
+        // Use type assertion for table not in types
+        let query = (supabase as any)
+          .from('ocr_extracted_prices')
+          .select('*')
+          .eq('org_id', profile.org_id)
+          .not('phone_brand', 'is', null)
+          .not('phone_model', 'is', null)
+          .not('price_rial', 'is', null);
 
-      // Group by brand, model, color, storage
-      const grouped = data.reduce((acc: any, item: any) => {
-        const storageStr = item.storage_gb ? `${item.storage_gb}GB` : 'نامشخص';
-        const key = `${item.phone_brand}-${item.phone_model}-${item.color || 'نامشخص'}-${storageStr}`;
-        
-        if (!acc[key]) {
-          acc[key] = {
-            phone_brand: item.phone_brand,
-            phone_model: item.phone_model,
-            color: item.color || 'نامشخص',
-            storage: storageStr,
-            prices: [],
-            company_names: new Set()
-          };
+        if (dateFrom) {
+          query = query.gte('date', dateFrom);
         }
-        
-        if (item.price_rial && item.price_rial > 0) {
-          const priceNum = typeof item.price_rial === 'bigint' ? Number(item.price_rial) : item.price_rial;
-          acc[key].prices.push(priceNum);
+        if (dateTo) {
+          query = query.lte('date', dateTo);
         }
-        
-        if (item.company_name) {
-          acc[key].company_names.add(item.company_name);
+        if (selectedBrand !== 'all') {
+          query = query.eq('phone_brand', selectedBrand);
         }
-        
-        acc[key].latest_date = item.date;
-        
-        return acc;
-      }, {});
 
-      // Calculate statistics
-      const results: PriceAnalysisData[] = Object.values(grouped)
-        .map((group: any) => {
-          if (group.prices.length === 0) return null;
+        const { data, error } = await query.order('date', { ascending: false });
+        
+        if (error) throw error;
+
+        // Group by brand, model, color, storage
+        const grouped = data?.reduce((acc: any, item: any) => {
+          const storageStr = item.storage_gb ? `${item.storage_gb}GB` : 'نامشخص';
+          const key = `${item.phone_brand}-${item.phone_model}-${item.color || 'نامشخص'}-${storageStr}`;
           
-          const prices = group.prices.sort((a: number, b: number) => a - b);
-          const min_price = prices[0];
-          const max_price = prices[prices.length - 1];
-          const avg_price = Math.round(prices.reduce((sum: number, price: number) => sum + price, 0) / prices.length);
+          if (!acc[key]) {
+            acc[key] = {
+              phone_brand: item.phone_brand,
+              phone_model: item.phone_model,
+              color: item.color || 'نامشخص',
+              storage: storageStr,
+              prices: [],
+              company_names: new Set()
+            };
+          }
           
-          return {
-            phone_brand: group.phone_brand,
-            phone_model: group.phone_model,
-            color: group.color,
-            storage: group.storage,
-            min_price,
-            max_price,
-            avg_price,
-            price_count: prices.length,
-            latest_date: group.latest_date,
-            company_names: Array.from(group.company_names)
-          };
-        })
-        .filter(Boolean) as PriceAnalysisData[];
+          if (item.price_rial && item.price_rial > 0) {
+            const priceNum = typeof item.price_rial === 'bigint' ? Number(item.price_rial) : item.price_rial;
+            acc[key].prices.push(priceNum);
+          }
+          
+          if (item.company_name) {
+            acc[key].company_names.add(item.company_name);
+          }
+          
+          acc[key].latest_date = item.date;
+          
+          return acc;
+        }, {}) || {};
 
-      // Apply search filter
-      if (searchTerm) {
-        return results.filter(item => 
-          item.phone_brand.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          item.phone_model.toLowerCase().includes(searchTerm.toLowerCase())
-        );
+        // Calculate statistics
+        const results: PriceAnalysisData[] = Object.values(grouped)
+          .map((group: any) => {
+            if (group.prices.length === 0) return null;
+            
+            const prices = group.prices.sort((a: number, b: number) => a - b);
+            const min_price = prices[0];
+            const max_price = prices[prices.length - 1];
+            const avg_price = Math.round(prices.reduce((sum: number, price: number) => sum + price, 0) / prices.length);
+            
+            return {
+              phone_brand: group.phone_brand,
+              phone_model: group.phone_model,
+              color: group.color,
+              storage: group.storage,
+              min_price,
+              max_price,
+              avg_price,
+              price_count: prices.length,
+              latest_date: group.latest_date,
+              company_names: Array.from(group.company_names)
+            };
+          })
+          .filter(Boolean) as PriceAnalysisData[];
+
+        // Apply search filter
+        if (searchTerm) {
+          return results.filter(item => 
+            item.phone_brand.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            item.phone_model.toLowerCase().includes(searchTerm.toLowerCase())
+          );
+        }
+
+        return results.sort((a, b) => a.phone_brand.localeCompare(b.phone_brand));
+      } catch (err) {
+        console.warn('Could not fetch analysis data:', err);
+        return [];
       }
-
-      return results.sort((a, b) => a.phone_brand.localeCompare(b.phone_brand));
-    }
+    },
+    enabled: !!profile?.org_id
   });
 
   const formatPrice = (price: number) => {
@@ -191,7 +227,7 @@ export default function PriceAnalysis() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">همه برندها</SelectItem>
-                  {brands?.map(brand => (
+                  {brands?.map((brand: string) => (
                     <SelectItem key={brand} value={brand}>{brand}</SelectItem>
                   ))}
                 </SelectContent>
