@@ -321,6 +321,63 @@ export type Database = {
           },
         ]
       }
+      ocr_extracted_prices: {
+        Row: {
+          chat_id: string
+          color: string | null
+          company_name: string | null
+          created_at: string
+          date: string | null
+          id: string
+          image_url: string | null
+          message_id: string
+          ocr_text: string | null
+          org_id: string
+          phone_brand: string | null
+          phone_model: string | null
+          price_raw: string | null
+          price_rial: number | null
+          source: string
+          storage_gb: number | null
+        }
+        Insert: {
+          chat_id: string
+          color?: string | null
+          company_name?: string | null
+          created_at?: string
+          date?: string | null
+          id?: string
+          image_url?: string | null
+          message_id: string
+          ocr_text?: string | null
+          org_id: string
+          phone_brand?: string | null
+          phone_model?: string | null
+          price_raw?: string | null
+          price_rial?: number | null
+          source?: string
+          storage_gb?: number | null
+        }
+        Update: {
+          chat_id?: string
+          color?: string | null
+          company_name?: string | null
+          created_at?: string
+          date?: string | null
+          id?: string
+          image_url?: string | null
+          message_id?: string
+          ocr_text?: string | null
+          org_id?: string
+          phone_brand?: string | null
+          phone_model?: string | null
+          price_raw?: string | null
+          price_rial?: number | null
+          source?: string
+          storage_gb?: number | null
+        }
+        Relationships: []
+      }
       ocr_rows_staging: {
         Row: {
           created_at: string
@@ -328,6 +385,7 @@ export type Database = {
           mapped: boolean
           media_file_id: string | null
           normalized: Json | null
+          org_id: string | null
           raw_json: Json
           reviewer_id: string | null
           upload_id: string | null
@@ -338,6 +396,7 @@ export type Database = {
           mapped?: boolean
           media_file_id?: string | null
           normalized?: Json | null
+          org_id?: string | null
           raw_json: Json
           reviewer_id?: string | null
           upload_id?: string | null
@@ -348,6 +407,7 @@ export type Database = {
           mapped?: boolean
           media_file_id?: string | null
           normalized?: Json | null
+          org_id?: string | null
           raw_json?: Json
           reviewer_id?: string | null
           upload_id?: string | null
@@ -358,6 +418,13 @@ export type Database = {
             columns: ["media_file_id"]
             isOneToOne: false
             referencedRelation: "media_files"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ocr_rows_staging_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
           {
@@ -512,6 +579,76 @@ export type Database = {
             columns: ["vendor_id"]
             isOneToOne: false
             referencedRelation: "vendors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      processed_prices: {
+        Row: {
+          color: string | null
+          company_name: string | null
+          id: string
+          image_url: string | null
+          org_id: string
+          phone_brand: string | null
+          phone_model: string | null
+          price_date: string | null
+          price_in_rials: number | null
+          processed_at: string
+          reviewed_by: string | null
+          staging_row_id: string | null
+          storage: string | null
+        }
+        Insert: {
+          color?: string | null
+          company_name?: string | null
+          id?: string
+          image_url?: string | null
+          org_id: string
+          phone_brand?: string | null
+          phone_model?: string | null
+          price_date?: string | null
+          price_in_rials?: number | null
+          processed_at?: string
+          reviewed_by?: string | null
+          staging_row_id?: string | null
+          storage?: string | null
+        }
+        Update: {
+          color?: string | null
+          company_name?: string | null
+          id?: string
+          image_url?: string | null
+          org_id?: string
+          phone_brand?: string | null
+          phone_model?: string | null
+          price_date?: string | null
+          price_in_rials?: number | null
+          processed_at?: string
+          reviewed_by?: string | null
+          staging_row_id?: string | null
+          storage?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "processed_prices_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "processed_prices_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "processed_prices_staging_row_id_fkey"
+            columns: ["staging_row_id"]
+            isOneToOne: true
+            referencedRelation: "ocr_rows_staging"
             referencedColumns: ["id"]
           },
         ]

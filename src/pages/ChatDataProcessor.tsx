@@ -58,12 +58,12 @@ export default function ChatDataProcessor() {
     queryFn: async () => {
       if (!userProfile?.org_id) return [];
       
-      // Use processed_prices table which exists in the schema
+      // Use ocr_extracted_prices table which exists in the schema
       const { data, error } = await supabase
-        .from('processed_prices')
+        .from('ocr_extracted_prices')
         .select('*')
         .eq('org_id', userProfile.org_id)
-        .order('processed_at', { ascending: false })
+        .order('created_at', { ascending: false })
         .limit(10);
       
       if (error) throw error;
@@ -81,15 +81,18 @@ export default function ChatDataProcessor() {
         company_name: data.company_name || null,
         phone_brand: data.phone_brand || null,
         phone_model: data.phone_model || null,
-        storage: data.storage || null,
+        storage_gb: data.storage ? parseInt(data.storage) : null,
         color: data.color || null,
-        price_in_rials: data.price_in_rials || null,
-        price_date: data.price_date || null,
-        image_url: data.image_url || null
+        price_rial: typeof data.price_in_rials === 'number' ? data.price_in_rials : null,
+        date: data.price_date || null,
+        image_url: data.image_url || null,
+        source: 'whatsapp' as const,
+        chat_id: `manual_${Date.now()}`,
+        message_id: `manual_${Date.now()}_msg`
       };
 
       const { data: result, error } = await supabase
-        .from('processed_prices')
+        .from('ocr_extracted_prices')
         .insert([insertData])
         .select()
         .single();
@@ -149,8 +152,10 @@ export default function ChatDataProcessor() {
     }));
   };
 
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('fa-IR').format(Math.round(price / 10)) + ' تومان';
+  const formatPrice = (price: bigint | number | null) => {
+    if (!price) return 'نامشخص';
+    const priceNum = typeof price === 'bigint' ? Number(price) : price;
+    return new Intl.NumberFormat('fa-IR').format(Math.round(priceNum / 10)) + ' تومان';
   };
 
   const formatDate = (dateString: string) => {
@@ -312,16 +317,14 @@ export default function ChatDataProcessor() {
                       <TableCell>
                         <div className="flex gap-2 flex-wrap">
                           {item.color && <Badge variant="outline">{item.color}</Badge>}
-                          {item.storage && <Badge variant="outline">{item.storage}</Badge>}
+                          {item.storage_gb && <Badge variant="outline">{item.storage_gb}GB</Badge>}
                         </div>
                       </TableCell>
                       <TableCell className="font-medium">
-                        {item.price_in_rials ? formatPrice(item.price_in_rials) : (
-                          <span className="text-muted-foreground">نامشخص</span>
-                        )}
+                        {formatPrice(item.price_rial)}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
-                        {formatDate(item.price_date)}
+                        {formatDate(item.date)}
                       </TableCell>
                     </TableRow>
                   ))}
