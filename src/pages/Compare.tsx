@@ -62,11 +62,11 @@ export default function Compare() {
         .select(`
           *,
           device:devices(*)
-        `)
-        .order('device.brand', { ascending: true });
+        `);
 
-      if (selectedBrand !== 'all') {
-        query = query.eq('device.brand', selectedBrand);
+      if (selectedBrand !== 'all' && devices) {
+        const deviceIds = devices.filter(d => d.brand === selectedBrand).map(d => d.id);
+        query = query.in('device_id', deviceIds);
       }
 
       const { data, error } = await query;
@@ -79,6 +79,14 @@ export default function Compare() {
           variant.device.brand.toLowerCase().includes(searchTerm.toLowerCase())
         );
       }
+
+      // Sort by brand and model
+      filteredData.sort((a, b) => {
+        if (a.device.brand !== b.device.brand) {
+          return a.device.brand.localeCompare(b.device.brand);
+        }
+        return a.device.model.localeCompare(b.device.model);
+      });
 
       return filteredData;
     },

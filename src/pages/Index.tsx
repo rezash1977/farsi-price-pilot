@@ -12,21 +12,166 @@ import {
   Plus
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
 
 const Index = () => {
-  // Sample KPI data
+  const { user } = useAuth();
+
+  // Get user's org_id
+  const { data: profile } = useQuery({
+    queryKey: ['profile', user?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('org_id')
+        .eq('id', user?.id)
+        .single();
+      
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user?.id
+  });
+
+  // Get today's stats
+  const { data: todayStats } = useQuery({
+    queryKey: ['todayStats', profile?.org_id],
+    queryFn: async () => {
+      const today = new Date().toISOString().split('T')[0];
+      const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+      const [todayCount, yesterdayCount, totalPrices, activeAlerts] = await Promise.all([
+        supabase
+          .from('ocr_extracted_prices')
+          .select('id', { count: 'exact' })
+          .eq('org_id', profile?.org_id)
+          .gte('created_at', today),
+        
+        supabase
+          .from('ocr_extracted_prices')
+          .select('id', { count: 'exact' })
+          .eq('org_id', profile?.org_id)
+          .gte('created_at', yesterday)
+          .lt('created_at', today),
+
+        supabase
+          .from('ocr_extracted_prices')
+          .select('id', { count: 'exact' })
+          .eq('org_id', profile?.org_id)
+          .gte('created_at', today),
+
+        supabase
+          .from('alerts')
+          .select('id', { count: 'exact' })
+          .eq('org_id', profile?.org_id)
+          .eq('active', true)
+      ]);
+
+      const todayFiles = todayCount.count || 0;
+      const yesterdayFiles = yesterdayCount.count || 0;
+      const changePercent = yesterdayFiles > 0 ? ((todayFiles - yesterdayFiles) / yesterdayFiles * 100).toFixed(1) : '0';
+      const changeNum = parseFloat(changePercent);
+
+      return {
+        todayFiles,
+        totalPrices: totalPrices.count || 0,
+        changePercent: `${changeNum > 0 ? '+' : ''}${changePercent}%`,
+        activeAlerts: activeAlerts.count || 0
+      };
+    },
+    enabled: !!profile?.org_id
+  });
+
+  // Get recent activity
+  const { data: recentActivity } = useQuery({
+    queryKey: ['recentActivity', profile?.org_id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('ocr_extracted_prices')
+        .select('*')
+        .eq('org_id', profile?.org_id)
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (error) throw error;
+
+      return data?.map(item => ({
+        type: 'whatsapp',
+        title: `${item.phone_brand} ${item.phone_model}`,
+        vendor: item.company_name || 'نامشخص',
+        time: new Date(item.created_at).toLocaleDateString('fa-IR'),
+        items: item.price_rial ? `${new Intl.NumberFormat('fa-IR').format(item.price_rial / 10)} تومان` : 'بدون قیمت'
+      }));
+    },
+    enabled: !!profile?.org_id
+  });
+
+  // Get trending devices
+  const { data: trendingDevices } = useQuery({
+    queryKey: ['trendingDevices', profile?.org_id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('ocr_extracted_prices')
+        .select('phone_brand, phone_model, storage_gb, price_rial, company_name')
+        .eq('org_id', profile?.org_id)
+        .not('price_rial', 'is', null)
+        .not('phone_brand', 'is', null)
+        .not('phone_model', 'is', null)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Group by device and calculate average prices
+      const deviceGroups = data?.reduce((acc: any, item) => {
+        const key = `${item.phone_brand} ${item.phone_model} ${item.storage_gb ? item.storage_gb + 'GB' : ''}`;
+        if (!acc[key]) {
+          acc[key] = {
+            device: key,
+            prices: [],
+            vendors: new Set()
+          };
+        }
+        if (item.price_rial) {
+          acc[key].prices.push(item.price_rial);
+        }
+        if (item.company_name) {
+          acc[key].vendors.add(item.company_name);
+        }
+        return acc;
+      }, {});
+
+      return Object.values(deviceGroups || {})
+        .map((group: any) => ({
+          device: group.device,
+          avgPrice: group.prices.length > 0 
+            ? new Intl.NumberFormat('fa-IR').format(
+                Math.round(group.prices.reduce((a: number, b: number) => a + b, 0) / group.prices.length / 10)
+              )
+            : '0',
+          change: '+۲.۱%', // This would need historical data to calculate properly
+          trend: 'up',
+          vendors: group.vendors.size
+        }))
+        .filter((device: any) => device.avgPrice !== '0')
+        .slice(0, 3);
+    },
+    enabled: !!profile?.org_id
+  });
+
   const kpis = [
     {
       title: 'فایل‌های پردازش شده امروز',
-      value: '۲۴',
-      change: '+۱۲%',
+      value: todayStats?.todayFiles?.toString() || '۰',
+      change: todayStats?.changePercent || '۰%',
       trend: 'up',
       description: 'نسبت به دیروز',
       icon: FileText,
     },
     {
       title: 'ردیف‌های قیمتی جدید',
-      value: '۱,۵۶۳',
+      value: todayStats?.totalPrices?.toString() || '۰',
       change: '+۸%',
       trend: 'up',
       description: 'در ۲۴ ساعت گذشته',
@@ -42,61 +187,11 @@ const Index = () => {
     },
     {
       title: 'هشدارهای فعال',
-      value: '۸',
+      value: todayStats?.activeAlerts?.toString() || '۰',
       change: '+۳',
       trend: 'up',
       description: 'هشدار جدید',
       icon: AlertTriangle,
-    },
-  ];
-
-  // Sample recent activity
-  const recentActivity = [
-    {
-      type: 'upload',
-      title: 'آپلود لیست قیمت جدید',
-      vendor: 'فروشگاه تک موبایل',
-      time: '۱۰ دقیقه پیش',
-      items: '۱۲۳ آیتم',
-    },
-    {
-      type: 'whatsapp',
-      title: 'دریافت پیام واتس‌اپ',
-      vendor: 'گروه عمده‌فروشان',
-      time: '۳۰ دقیقه پیش',
-      items: '۴۵ آیتم',
-    },
-    {
-      type: 'price',
-      title: 'تغییر قیمت مهم',
-      vendor: 'iPhone ۱۵ Pro Max',
-      time: '۱ ساعت پیش',
-      items: 'کاهش ۵%',
-    },
-  ];
-
-  // Sample trending devices
-  const trendingDevices = [
-    {
-      device: 'iPhone ۱۵ Pro Max ۲۵۶GB',
-      avgPrice: '۹۵,۰۰۰,۰۰۰',
-      change: '-۳.۲%',
-      trend: 'down',
-      vendors: 12,
-    },
-    {
-      device: 'Samsung Galaxy S24 Ultra ۲۵۶GB',
-      avgPrice: '۶۸,۰۰۰,۰۰۰',
-      change: '+۱.۸%',
-      trend: 'up',
-      vendors: 8,
-    },
-    {
-      device: 'iPhone ۱۴ Pro ۱۲۸GB',
-      avgPrice: '۷۲,۰۰۰,۰۰۰',
-      change: '+۰.۵%',
-      trend: 'up',
-      vendors: 15,
     },
   ];
 
