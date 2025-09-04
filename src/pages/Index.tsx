@@ -259,7 +259,7 @@ const Index = () => {
             <CardDescription>آخرین تغییرات و آپدیت‌ها</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {recentActivity.map((activity, index) => (
+            {(recentActivity || []).map((activity, index) => (
               <div key={index} className="flex items-center justify-between border-b border-border pb-4 last:border-0 last:pb-0">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -298,7 +298,7 @@ const Index = () => {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            {trendingDevices.map((device, index) => (
+            {(trendingDevices || []).map((device, index) => (
               <div key={index} className="flex items-center justify-between border-b border-border pb-4 last:border-0 last:pb-0">
                 <div>
                   <p className="font-medium text-foreground">{device.device}</p>
