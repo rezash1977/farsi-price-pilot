@@ -91,9 +91,11 @@ export default function Alerts() {
     }
   });
 
-  const { data: variants } = useQuery({
-    queryKey: ['variants_for_alerts'],
+  const { data: variants, isLoading: variantsLoading } = useQuery({
+    queryKey: ['variants_for_alerts', profile?.org_id],
     queryFn: async () => {
+      if (!profile?.org_id) return [];
+      
       const { data, error } = await supabase
         .from('variants')
         .select(`
@@ -107,7 +109,8 @@ export default function Alerts() {
       
       if (error) throw error;
       return data as Variant[];
-    }
+    },
+    enabled: !!profile?.org_id
   });
 
   const { data: notifications } = useQuery({
@@ -308,11 +311,17 @@ export default function Alerts() {
                     <SelectValue placeholder="دستگاه را انتخاب کنید" />
                   </SelectTrigger>
                   <SelectContent>
-                    {variants?.map((variant) => (
-                      <SelectItem key={variant.id} value={variant.id}>
-                        {variant.device.brand} {variant.device.model} - {variant.color} - {variant.ram_gb}GB/{variant.storage_gb}GB
-                      </SelectItem>
-                    ))}
+                    {variantsLoading ? (
+                      <SelectItem value="" disabled>در حال بارگذاری...</SelectItem>
+                    ) : variants && variants.length > 0 ? (
+                      variants.map((variant) => (
+                        <SelectItem key={variant.id} value={variant.id}>
+                          {variant.device.brand} {variant.device.model} - {variant.color} - {variant.ram_gb}GB/{variant.storage_gb}GB
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="" disabled>هیچ دستگاهی یافت نشد</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
