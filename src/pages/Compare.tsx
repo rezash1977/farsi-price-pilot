@@ -163,27 +163,60 @@ export default function Compare() {
       </div>
 
       {/* Search and Filter */}
-      <div className="flex gap-4 items-center">
-        <div className="relative flex-1">
-          <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-          <Input
-            placeholder="جستجوی دستگاه..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pr-10"
-          />
+      <div className="space-y-4">
+        <div className="flex gap-4 items-center">
+          <div className="relative flex-1">
+            <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+            <Input
+              placeholder="جستجوی دستگاه..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pr-10"
+            />
+          </div>
+          <Select value={selectedBrand} onValueChange={setSelectedBrand}>
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="انتخاب برند" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">همه برندها</SelectItem>
+              {brands.map(brand => (
+                <SelectItem key={brand} value={brand}>{brand}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-        <Select value={selectedBrand} onValueChange={setSelectedBrand}>
-          <SelectTrigger className="w-48">
-            <SelectValue placeholder="انتخاب برند" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">همه برندها</SelectItem>
-            {brands.map(brand => (
-              <SelectItem key={brand} value={brand}>{brand}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        
+        {/* Available Brands from Database */}
+        <div className="flex flex-wrap gap-2 items-center">
+          <span className="text-sm text-muted-foreground ml-2">برندهای موجود:</span>
+          {devicesLoading ? (
+            <Badge variant="outline">در حال بارگذاری...</Badge>
+          ) : brands.length > 0 ? (
+            brands.map(brand => (
+              <Badge 
+                key={brand} 
+                variant={selectedBrand === brand ? "default" : "secondary"}
+                className="cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors"
+                onClick={() => setSelectedBrand(brand)}
+              >
+                {brand}
+              </Badge>
+            ))
+          ) : (
+            <Badge variant="outline">هیچ برندی یافت نشد</Badge>
+          )}
+          {selectedBrand !== 'all' && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSelectedBrand('all')}
+              className="text-xs"
+            >
+              نمایش همه
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Variant Selection */}
