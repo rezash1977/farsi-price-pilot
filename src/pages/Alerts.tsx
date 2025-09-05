@@ -312,7 +312,7 @@ export default function Alerts() {
                   </SelectTrigger>
                   <SelectContent>
                     {variantsLoading ? (
-                      <SelectItem value="" disabled>در حال بارگذاری...</SelectItem>
+                      <SelectItem value="loading" disabled>در حال بارگذاری...</SelectItem>
                     ) : variants && variants.length > 0 ? (
                       variants.map((variant) => (
                         <SelectItem key={variant.id} value={variant.id}>
@@ -320,7 +320,7 @@ export default function Alerts() {
                         </SelectItem>
                       ))
                     ) : (
-                      <SelectItem value="" disabled>هیچ دستگاهی یافت نشد</SelectItem>
+                      <SelectItem value="no-devices" disabled>هیچ دستگاهی یافت نشد</SelectItem>
                     )}
                   </SelectContent>
                 </Select>
