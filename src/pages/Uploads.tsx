@@ -8,9 +8,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Upload, FileText, CheckCircle, XCircle, Clock, Eye } from 'lucide-react';
+import { Upload, FileText, CheckCircle, XCircle, Clock, Eye, MoreHorizontal, Edit2, Trash2, Download, RefreshCw } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 
 interface UploadFile {
   id: string;
@@ -21,9 +22,15 @@ interface UploadFile {
   created_at: string;
 }
 
+interface EditUploadData {
+  filename: string;
+}
+
 export default function Uploads() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [editingUpload, setEditingUpload] = useState<UploadFile | null>(null);
+  const [editFormData, setEditFormData] = useState<EditUploadData>({ filename: '' });
   const queryClient = useQueryClient();
   const { user } = useAuth();
 
@@ -171,6 +178,83 @@ export default function Uploads() {
     }
   });
 
+  const editMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: EditUploadData }) => {
+      const { error } = await supabase
+        .from('uploads')
+        .update({ filename: data.filename })
+        .eq('id', id);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({
+        title: 'ویرایش موفق',
+        description: 'اطلاعات فایل با موفقیت به‌روزرسانی شد'
+      });
+      queryClient.invalidateQueries({ queryKey: ['uploads'] });
+      setEditingUpload(null);
+    },
+    onError: () => {
+      toast({
+        title: 'خطا در ویرایش',
+        description: 'مشکلی در ویرایش اطلاعات پیش آمد',
+        variant: 'destructive'
+      });
+    }
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from('uploads')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({
+        title: 'حذف موفق',
+        description: 'فایل با موفقیت حذف شد'
+      });
+      queryClient.invalidateQueries({ queryKey: ['uploads'] });
+      queryClient.invalidateQueries({ queryKey: ['ocr_rows'] });
+    },
+    onError: () => {
+      toast({
+        title: 'خطا در حذف',
+        description: 'مشکلی در حذف فایل پیش آمد',
+        variant: 'destructive'
+      });
+    }
+  });
+
+  const reprocessMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from('uploads')
+        .update({ ocr_status: 'queued' })
+        .eq('id', id);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({
+        title: 'پردازش مجدد آغاز شد',
+        description: 'فایل در صف پردازش مجدد قرار گرفت'
+      });
+      queryClient.invalidateQueries({ queryKey: ['uploads'] });
+    },
+    onError: () => {
+      toast({
+        title: 'خطا در پردازش مجدد',
+        description: 'مشکلی در شروع پردازش مجدد پیش آمد',
+        variant: 'destructive'
+      });
+    }
+  });
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -182,6 +266,35 @@ export default function Uploads() {
     if (selectedFile) {
       uploadMutation.mutate(selectedFile);
     }
+  };
+
+  const handleEdit = (upload: UploadFile) => {
+    setEditingUpload(upload);
+    setEditFormData({ filename: upload.filename });
+  };
+
+  const handleEditSave = () => {
+    if (editingUpload) {
+      editMutation.mutate({ id: editingUpload.id, data: editFormData });
+    }
+  };
+
+  const handleDelete = (id: string) => {
+    if (confirm('آیا از حذف این فایل اطمینان دارید؟')) {
+      deleteMutation.mutate(id);
+    }
+  };
+
+  const handleReprocess = (id: string) => {
+    reprocessMutation.mutate(id);
+  };
+
+  const handleDownload = (upload: UploadFile) => {
+    // In a real implementation, this would download the file from storage
+    toast({
+      title: 'دانلود',
+      description: `دانلود ${upload.filename} (قابلیت دانلود به زودی اضافه می‌شود)`
+    });
   };
 
   const getStatusIcon = (status: string) => {
@@ -320,44 +433,76 @@ export default function Uploads() {
                         {formatDate(upload.created_at)}
                       </TableCell>
                       <TableCell>
-                        <Dialog>
-                          <DialogTrigger asChild>
-                            <Button variant="ghost" size="sm">
-                              <Eye className="w-4 h-4" />
-                            </Button>
-                          </DialogTrigger>
-                          <DialogContent className="max-w-4xl">
-                            <DialogHeader>
-                              <DialogTitle>جزئیات پردازش فایل</DialogTitle>
-                            </DialogHeader>
-                            <div className="space-y-4">
-                              <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                  <Label>نام فایل</Label>
-                                  <p className="text-sm">{upload.filename}</p>
+                        <div className="flex items-center gap-2">
+                          <Dialog>
+                            <DialogTrigger asChild>
+                              <Button variant="ghost" size="sm">
+                                <Eye className="w-4 h-4" />
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent className="max-w-4xl">
+                              <DialogHeader>
+                                <DialogTitle>جزئیات پردازش فایل</DialogTitle>
+                              </DialogHeader>
+                              <div className="space-y-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                  <div>
+                                    <Label>نام فایل</Label>
+                                    <p className="text-sm">{upload.filename}</p>
+                                  </div>
+                                  <div>
+                                    <Label>تعداد ردیف پردازش شده</Label>
+                                    <p className="text-sm">{upload.row_count}</p>
+                                  </div>
                                 </div>
+                                
+                                {/* Show OCR results for this upload */}
                                 <div>
-                                  <Label>تعداد ردیف پردازش شده</Label>
-                                  <p className="text-sm">{upload.row_count}</p>
+                                  <Label>نتایج استخراج شده</Label>
+                                  <div className="mt-2 space-y-2 max-h-60 overflow-y-auto">
+                                    {ocrRows?.filter(row => row.upload_id === upload.id).map((row: any) => (
+                                      <div key={row.id} className="p-3 border rounded-lg text-sm">
+                                        <pre className="whitespace-pre-wrap">
+                                          {JSON.stringify(row.normalized || row.raw_json, null, 2)}
+                                        </pre>
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
                               </div>
-                              
-                              {/* Show OCR results for this upload */}
-                              <div>
-                                <Label>نتایج استخراج شده</Label>
-                                <div className="mt-2 space-y-2 max-h-60 overflow-y-auto">
-                                  {ocrRows?.filter(row => row.upload_id === upload.id).map((row: any) => (
-                                    <div key={row.id} className="p-3 border rounded-lg text-sm">
-                                      <pre className="whitespace-pre-wrap">
-                                        {JSON.stringify(row.normalized || row.raw_json, null, 2)}
-                                      </pre>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            </div>
-                          </DialogContent>
-                        </Dialog>
+                            </DialogContent>
+                          </Dialog>
+
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm">
+                                <MoreHorizontal className="w-4 h-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-48">
+                              <DropdownMenuItem onClick={() => handleEdit(upload)}>
+                                <Edit2 className="w-4 h-4 ml-2" />
+                                ویرایش نام فایل
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleDownload(upload)}>
+                                <Download className="w-4 h-4 ml-2" />
+                                دانلود فایل
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleReprocess(upload.id)}>
+                                <RefreshCw className="w-4 h-4 ml-2" />
+                                پردازش مجدد
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem 
+                                onClick={() => handleDelete(upload.id)}
+                                className="text-red-600 focus:text-red-600"
+                              >
+                                <Trash2 className="w-4 h-4 ml-2" />
+                                حذف فایل
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -367,6 +512,34 @@ export default function Uploads() {
           )}
         </CardContent>
       </Card>
+
+      {/* Edit Upload Dialog */}
+      <Dialog open={!!editingUpload} onOpenChange={() => setEditingUpload(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>ویرایش اطلاعات فایل</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-filename">نام فایل</Label>
+              <Input
+                id="edit-filename"
+                value={editFormData.filename}
+                onChange={(e) => setEditFormData({ filename: e.target.value })}
+                placeholder="نام فایل را وارد کنید"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setEditingUpload(null)}>
+                انصراف
+              </Button>
+              <Button onClick={handleEditSave} disabled={editMutation.isPending}>
+                {editMutation.isPending ? 'در حال ذخیره...' : 'ذخیره'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
