@@ -807,10 +807,14 @@ export type Database = {
           connected: boolean | null
           connected_at: string | null
           created_at: string
+          encryption_key_id: string | null
           error_message: string | null
           id: string
           phone_number: string | null
+          phone_number_encrypted: string | null
           qr_code: string | null
+          qr_code_encrypted: string | null
+          qr_expires_at: string | null
           session_id: string
           status: string | null
           updated_at: string
@@ -820,10 +824,14 @@ export type Database = {
           connected?: boolean | null
           connected_at?: string | null
           created_at?: string
+          encryption_key_id?: string | null
           error_message?: string | null
           id?: string
           phone_number?: string | null
+          phone_number_encrypted?: string | null
           qr_code?: string | null
+          qr_code_encrypted?: string | null
+          qr_expires_at?: string | null
           session_id: string
           status?: string | null
           updated_at?: string
@@ -833,10 +841,14 @@ export type Database = {
           connected?: boolean | null
           connected_at?: string | null
           created_at?: string
+          encryption_key_id?: string | null
           error_message?: string | null
           id?: string
           phone_number?: string | null
+          phone_number_encrypted?: string | null
           qr_code?: string | null
+          qr_code_encrypted?: string | null
+          qr_expires_at?: string | null
           session_id?: string
           status?: string | null
           updated_at?: string
@@ -849,7 +861,29 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      cleanup_expired_qr_codes: {
+        Args: Record<PropertyKey, never>
+        Returns: number
+      }
+      cleanup_old_sessions: {
+        Args: Record<PropertyKey, never>
+        Returns: number
+      }
+      decrypt_session_data: {
+        Args: { encrypted_data: string; key_id?: string }
+        Returns: string
+      }
+      encrypt_session_data: {
+        Args: { data: string; key_id?: string }
+        Returns: string
+      }
+      get_whatsapp_qr_code: {
+        Args: { session_id_param: string }
+        Returns: {
+          expires_at: string
+          qr_code: string
+        }[]
+      }
     }
     Enums: {
       alert_condition: "lt" | "lte" | "eq"
