@@ -18,40 +18,60 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    console.log('Starting WhatsApp session cleanup...')
+    console.log('Starting WhatsApp cleanup process...')
 
-    // Clean up expired QR codes using secure function
-    const { data: expiredCount, error: expiredError } = await supabase.rpc('cleanup_expired_qr_codes')
-    
-    if (expiredError) {
-      console.error('Error cleaning expired QR codes:', expiredError)
-    } else {
-      console.log(`Cleaned up ${expiredCount || 0} expired QR codes`)
+    // Clean up expired QR codes
+    const { data: expiredQRs, error: qrError } = await supabase
+      .rpc('cleanup_expired_qr_codes')
+
+    if (qrError) {
+      console.error('Error cleaning expired QR codes:', qrError)
+      throw qrError
     }
+
+    console.log(`Cleaned up ${expiredQRs || 0} expired QR codes`)
 
     // Clean up old disconnected sessions (older than 7 days)
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-    
-    const { data: deletedSessions, error: deleteError } = await supabase
+    const { data: oldSessions, error: sessionsError } = await supabase
       .from('whatsapp_sessions')
       .delete()
-      .lt('created_at', sevenDaysAgo)
+      .lt('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
       .eq('connected', false)
-      .select('count', { count: 'exact' })
 
-    if (deleteError) {
-      console.error('Error cleaning up old sessions:', deleteError)
-    } else {
-      console.log(`Cleaned up old disconnected sessions`)
+    if (sessionsError) {
+      console.error('Error cleaning old sessions:', sessionsError)
+      throw sessionsError
     }
 
-    // Return cleanup summary
+    console.log(`Cleaned up ${oldSessions?.length || 0} old disconnected sessions`)
+
+    // Clean up orphaned media files (optional)
+    const { data: orphanedMedia, error: mediaError } = await supabase
+      .from('media_files')
+      .delete()
+      .lt('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
+      .eq('ocr_status', 'failed')
+
+    if (mediaError) {
+      console.error('Error cleaning orphaned media:', mediaError)
+    } else {
+      console.log(`Cleaned up ${orphanedMedia?.length || 0} failed media files`)
+    }
+
+    const summary = {
+      expired_qr_codes: expiredQRs || 0,
+      old_sessions: oldSessions?.length || 0,
+      failed_media: orphanedMedia?.length || 0,
+      timestamp: new Date().toISOString()
+    }
+
+    console.log('Cleanup completed:', summary)
+
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         success: true,
-        expired_qr_codes_cleaned: expiredCount || 0,
-        old_sessions_cleaned: true,
-        timestamp: new Date().toISOString()
+        message: 'Cleanup completed successfully',
+        summary
       }),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -59,12 +79,11 @@ serve(async (req) => {
     )
 
   } catch (error) {
-    console.error('WhatsApp cleanup error:', error)
+    console.error('Cleanup error:', error)
     return new Response(
       JSON.stringify({ 
-        success: false,
-        error: error.message,
-        timestamp: new Date().toISOString()
+        error: 'Cleanup failed',
+        details: error.message 
       }),
       { 
         status: 500,
