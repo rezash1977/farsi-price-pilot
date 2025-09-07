@@ -209,13 +209,13 @@ async function generateQRCode(supabase: any, user_id: string) {
     // Initialize WhatsApp Web connection and get real QR code
     const { qrCode, status } = await whatsappSession.initializeSession()
 
-    // Store session in Supabase with real QR code
+    // Store session in Supabase with encrypted QR code
     const { error } = await supabase
       .from('whatsapp_sessions')
       .insert({
         session_id,
         user_id,
-        qr_code: qrCode,
+        qr_code: qrCode, // Will be automatically encrypted by trigger
         connected: false,
         status: status,
         created_at: new Date().toISOString()
@@ -229,11 +229,20 @@ async function generateQRCode(supabase: any, user_id: string) {
 
     console.log(`Real WhatsApp session ${session_id} created with QR code`)
 
+    // Use secure function to get QR code
+    const { data: qrData } = await supabase.rpc('get_whatsapp_qr_code', {
+      session_id_param: session_id
+    })
+
+    const secureQrCode = qrData?.[0]?.qr_code || null
+    const expiresAt = qrData?.[0]?.expires_at || null
+
     return new Response(
       JSON.stringify({ 
         session_id,
-        qr_code: qrCode,
-        status: status
+        qr_code: secureQrCode,
+        status: status,
+        expires_at: expiresAt
       }),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -267,11 +276,34 @@ function cleanupSession(session_id: string) {
   }
 }
 
-// Cleanup inactive sessions every 30 minutes
-setInterval(() => {
-  console.log('Cleaning up inactive WhatsApp sessions...')
-  // In a real implementation, you'd check session activity and cleanup old ones
-}, 30 * 60 * 1000)
+// Auto cleanup expired QR codes and old sessions every 5 minutes
+setInterval(async () => {
+  try {
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    )
+
+    // Clean up expired QR codes
+    const { data: expiredCount } = await supabase.rpc('cleanup_expired_qr_codes')
+    console.log(`Cleaned up ${expiredCount || 0} expired QR codes`)
+
+    // Clean up old disconnected sessions (7+ days old)
+    const { error: cleanupError } = await supabase
+      .from('whatsapp_sessions')
+      .delete()
+      .lt('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+      .eq('connected', false)
+
+    if (cleanupError) {
+      console.error('Error cleaning up old sessions:', cleanupError)
+    } else {
+      console.log('Cleaned up old disconnected sessions')
+    }
+  } catch (error) {
+    console.error('Error in cleanup job:', error)
+  }
+}, 5 * 60 * 1000) // Every 5 minutes
 
 async function checkConnectionStatus(supabase: any, session_id: string) {
   try {
