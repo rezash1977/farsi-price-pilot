@@ -123,7 +123,7 @@ export default function WhatsApp() {
     }
   });
 
-  // Generate QR Code for WhatsApp Web connection using Puppeteer
+  // Generate QR Code for WhatsApp Web connection using real server
   const generateQRCode = async () => {
     if (!user?.id) {
       toast({
@@ -138,6 +138,8 @@ export default function WhatsApp() {
     setQrCode('');
 
     try {
+      console.log('Generating WhatsApp QR code...');
+      
       const { data, error } = await supabase.functions.invoke('whatsapp-connect', {
         body: {
           action: 'generate_qr',
@@ -145,34 +147,51 @@ export default function WhatsApp() {
         }
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase function error:', error);
+        throw error;
+      }
 
-      setQrCode(data.qr_code);
-      setCurrentSession(data.session_id);
-      
-      // Start checking connection status
-      checkConnectionStatus(data.session_id);
-      
-      toast({
-        title: 'QR کد تولید شد',
-        description: 'QR کد را با واتس‌اپ بیزینس خود اسکن کنید'
-      });
+      console.log('QR generation response:', data);
+
+      if (data.qr_code) {
+        setQrCode(data.qr_code);
+        setCurrentSession(data.session_id);
+        
+        // Start checking connection status
+        if (data.session_id) {
+          checkConnectionStatus(data.session_id);
+        }
+        
+        toast({
+          title: 'QR کد تولید شد',
+          description: 'QR کد را با واتس‌اپ بیزینس خود اسکن کنید'
+        });
+      } else {
+        throw new Error('QR کد دریافت نشد');
+      }
 
     } catch (error) {
       console.error('Error generating QR code:', error);
       setConnectionStatus('failed');
       toast({
         title: 'خطا در تولید QR کد',
-        description: 'مشکلی در اتصال به واتس‌اپ پیش آمد',
+        description: error.message || 'مشکلی در اتصال به واتس‌اپ پیش آمد',
         variant: 'destructive'
       });
     }
   };
 
-  // Check connection status periodically
+  // Check connection status periodically with better error handling
   const checkConnectionStatus = async (sessionId: string) => {
+    let attempts = 0;
+    const maxAttempts = 40; // Check for up to 2 minutes
+    
     const checkStatus = async () => {
       try {
+        attempts++;
+        console.log(`Checking WhatsApp connection status (attempt ${attempts})...`);
+        
         const { data, error } = await supabase.functions.invoke('whatsapp-connect', {
           body: {
             action: 'check_status',
@@ -180,34 +199,64 @@ export default function WhatsApp() {
           }
         });
 
-        if (error) throw error;
+        if (error) {
+          console.error('Status check error:', error);
+          throw error;
+        }
+
+        console.log('Connection status:', data);
 
         if (data.connected) {
           setIsConnected(true);
           setConnectionStatus('connected');
+          
+          // Create integration record
           createIntegrationMutation.mutate();
+          
           toast({
             title: 'اتصال برقرار شد',
             description: `با موفقیت به واتس‌اپ بیزینس متصل شدید${data.phone_number ? ` - ${data.phone_number}` : ''}`
           });
-        } else if (data.status === 'failed') {
+          
+        } else if (data.status === 'failed' || data.error_message) {
           setConnectionStatus('failed');
           toast({
             title: 'اتصال ناموفق',
-            description: 'اتصال به واتس‌اپ با خطا مواجه شد',
+            description: data.error_message || 'اتصال به واتس‌اپ با خطا مواجه شد',
             variant: 'destructive'
           });
-        } else {
-          // Continue checking
+          
+        } else if (attempts < maxAttempts) {
+          // Continue checking if not connected and not failed
           setTimeout(checkStatus, 3000);
+        } else {
+          // Max attempts reached
+          setConnectionStatus('failed');
+          toast({
+            title: 'زمان اتصال تمام شد',
+            description: 'لطفا دوباره تلاش کنید',
+            variant: 'destructive'
+          });
         }
+        
       } catch (error) {
         console.error('Error checking status:', error);
-        setConnectionStatus('failed');
+        if (attempts < 3) {
+          // Retry a few times for network errors
+          setTimeout(checkStatus, 5000);
+        } else {
+          setConnectionStatus('failed');
+          toast({
+            title: 'خطا در بررسی وضعیت اتصال',
+            description: 'لطفا دوباره تلاش کنید',
+            variant: 'destructive'
+          });
+        }
       }
     };
 
-    setTimeout(checkStatus, 3000);
+    // Start checking after 2 seconds
+    setTimeout(checkStatus, 2000);
   };
 
   const createIntegrationMutation = useMutation({
@@ -415,19 +464,32 @@ export default function WhatsApp() {
           ) : (
             <div className="text-center space-y-4">
               {qrCode ? (
-                <div className="space-y-4">
-                  <div className="flex justify-center">
-                    <img src={qrCode} alt="QR Code" className="w-48 h-48 border rounded-lg" />
+                  <div className="space-y-4">
+                    <div className="flex justify-center p-4 bg-gray-50 rounded-lg border-2 border-dashed">
+                      <img 
+                        src={qrCode} 
+                        alt="QR Code for WhatsApp" 
+                        className="w-56 h-56 rounded-lg shadow-sm" 
+                        style={{ imageRendering: 'crisp-edges' }}
+                      />
+                    </div>
+                    <div className="space-y-2 text-center">
+                      <p className="text-sm text-muted-foreground font-medium">
+                        QR کد را با واتس‌اپ بیزینس خود اسکن کنید
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {connectionStatus === 'connecting' ? 
+                          '⏳ در حال بارگذاری واتس‌اپ وب و انتظار برای اسکن...' : 
+                          '📱 آماده برای اسکن - QR کد 5 دقیقه اعتبار دارد'
+                        }
+                      </p>
+                      {connectionStatus === 'connecting' && (
+                        <div className="flex justify-center mt-2">
+                          <div className="w-4 h-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <p className="text-sm text-muted-foreground">
-                      QR کد را با واتس‌اپ بیزینس خود اسکن کنید
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {connectionStatus === 'connecting' ? 'در حال بارگذاری واتس‌اپ وب...' : 'در حال انتظار برای اتصال...'}
-                    </p>
-                  </div>
-                </div>
               ) : (
                 <div className="space-y-4">
                   <div className="w-48 h-48 mx-auto border-2 border-dashed border-muted rounded-lg flex items-center justify-center">

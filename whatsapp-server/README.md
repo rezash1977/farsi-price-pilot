@@ -1,251 +1,360 @@
 # WhatsApp Web Automation Server
 
-این سرور برای اتصال واقعی به واتس‌اپ وب استفاده می‌شود. شما باید این سرور را به صورت جداگانه راه‌اندازی کنید.
+سرور Node.js برای اتصال واقعی به واتس‌اپ وب با استفاده از whatsapp-web.js
+
+## ویژگی‌های کلیدی
+
+- ✅ اتصال واقعی به واتس‌اپ وب
+- ✅ تولید QR کد واقعی برای احراز هویت  
+- ✅ استخراج مخاطبین واقعی
+- ✅ دریافت پیام‌های واقعی با فیلتر تاریخ
+- ✅ پشتیبانی از رسانه (عکس، ویدیو، سند)
+- ✅ WebSocket API برای ارتباط real-time
+- ✅ REST API برای مدیریت session ها
+- ✅ مدیریت چندین session همزمان
+- ✅ QR کد به صورت Base64 Data URL
 
 ## نصب و راه‌اندازی
 
 ### 1. نصب Dependencies
 
 ```bash
-npm init -y
-npm install whatsapp-web.js qrcode-terminal ws express
+cd whatsapp-server
+npm install
 ```
 
-### 2. فایل server.js ایجاد کنید
-
-```javascript
-const { Client, LocalAuth } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
-const WebSocket = require('ws');
-const express = require('express');
-
-const app = express();
-const server = require('http').createServer(app);
-const wss = new WebSocket.Server({ server });
-
-const sessions = new Map();
-
-class WhatsAppSession {
-    constructor(sessionId) {
-        this.sessionId = sessionId;
-        this.client = null;
-        this.websockets = new Set();
-        this.qrCode = null;
-        this.isReady = false;
-        this.init();
-    }
-
-    init() {
-        this.client = new Client({
-            authStrategy: new LocalAuth({
-                clientId: this.sessionId
-            }),
-            puppeteer: {
-                headless: true,
-                args: ['--no-sandbox', '--disable-setuid-sandbox']
-            }
-        });
-
-        this.client.on('qr', (qr) => {
-            this.qrCode = qr;
-            console.log(`QR code generated for session ${this.sessionId}`);
-            this.broadcast({ type: 'qr', qr });
-        });
-
-        this.client.on('ready', () => {
-            this.isReady = true;
-            console.log(`WhatsApp session ${this.sessionId} is ready!`);
-            this.broadcast({ 
-                type: 'ready', 
-                phoneNumber: this.client.info.wid.user 
-            });
-        });
-
-        this.client.on('authenticated', () => {
-            console.log(`Session ${this.sessionId} authenticated`);
-            this.broadcast({ type: 'authenticated' });
-        });
-
-        this.client.on('auth_failure', (msg) => {
-            console.error(`Authentication failed for session ${this.sessionId}:`, msg);
-            this.broadcast({ type: 'auth_failure', message: msg });
-        });
-
-        this.client.on('disconnected', (reason) => {
-            console.log(`Session ${this.sessionId} disconnected:`, reason);
-            this.broadcast({ type: 'disconnected', reason });
-            this.cleanup();
-        });
-
-        this.client.initialize();
-    }
-
-    broadcast(message) {
-        const data = JSON.stringify(message);
-        this.websockets.forEach(ws => {
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.send(data);
-            }
-        });
-    }
-
-    addWebSocket(ws) {
-        this.websockets.add(ws);
-        
-        // Send current state
-        if (this.qrCode && !this.isReady) {
-            ws.send(JSON.stringify({ type: 'qr', qr: this.qrCode }));
-        } else if (this.isReady) {
-            ws.send(JSON.stringify({ 
-                type: 'ready', 
-                phoneNumber: this.client.info.wid.user 
-            }));
-        }
-    }
-
-    removeWebSocket(ws) {
-        this.websockets.delete(ws);
-    }
-
-    async getContacts() {
-        if (!this.isReady) {
-            throw new Error('Session not ready');
-        }
-        return await this.client.getContacts();
-    }
-
-    async getMessages(contactId, limit = 50) {
-        if (!this.isReady) {
-            throw new Error('Session not ready');
-        }
-        const chat = await this.client.getChatById(contactId);
-        return await chat.fetchMessages({ limit });
-    }
-
-    cleanup() {
-        if (this.client) {
-            this.client.destroy();
-        }
-        this.websockets.clear();
-        sessions.delete(this.sessionId);
-    }
-}
-
-wss.on('connection', (ws, req) => {
-    const url = new URL(req.url, `http://${req.headers.host}`);
-    const sessionId = url.pathname.split('/').pop();
-    
-    console.log(`New WebSocket connection for session: ${sessionId}`);
-
-    let session = sessions.get(sessionId);
-    if (!session) {
-        session = new WhatsAppSession(sessionId);
-        sessions.set(sessionId, session);
-    }
-
-    session.addWebSocket(ws);
-
-    ws.on('message', async (message) => {
-        try {
-            const data = JSON.parse(message);
-            console.log(`Received action: ${data.action} for session ${sessionId}`);
-
-            switch (data.action) {
-                case 'initialize':
-                    // Already handled in constructor
-                    break;
-                case 'getContacts':
-                    const contacts = await session.getContacts();
-                    ws.send(JSON.stringify({ type: 'contacts', contacts }));
-                    break;
-                case 'getMessages':
-                    const messages = await session.getMessages(data.contactId, data.limit);
-                    ws.send(JSON.stringify({ type: 'messages', messages }));
-                    break;
-                default:
-                    ws.send(JSON.stringify({ type: 'error', message: 'Unknown action' }));
-            }
-        } catch (error) {
-            console.error('Error processing message:', error);
-            ws.send(JSON.stringify({ type: 'error', message: error.message }));
-        }
-    });
-
-    ws.on('close', () => {
-        console.log(`WebSocket disconnected for session: ${sessionId}`);
-        session.removeWebSocket(ws);
-        
-        // Cleanup session if no more connections
-        if (session.websockets.size === 0) {
-            setTimeout(() => {
-                if (session.websockets.size === 0) {
-                    session.cleanup();
-                }
-            }, 60000); // Wait 1 minute before cleanup
-        }
-    });
-});
-
-const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
-    console.log(`WhatsApp automation server running on port ${PORT}`);
-});
-```
-
-### 3. اجرای سرور
+### 2. اجرای سرور (Development)
 
 ```bash
-node server.js
+npm run dev
 ```
 
-### 4. Deploy روی Vercel
+### 3. اجرای سرور (Production)
 
-برای deploy کردن روی Vercel:
+```bash
+npm start
+```
 
-1. فایل `vercel.json` ایجاد کنید:
+سرور روی پورت 3001 اجرا می‌شود (یا PORT environment variable).
 
+## استقرار
+
+### Option 1: Render.com (توصیه شده)
+
+1. Repository خود را به Render متصل کنید
+2. یک Web Service جدید ایجاد کنید
+3. تنظیمات:
+
+```
+Build Command: cd whatsapp-server && npm install
+Start Command: cd whatsapp-server && npm start
+Environment: Node
+Root Directory: whatsapp-server
+```
+
+4. Environment Variables:
+```
+PORT=10000
+NODE_ENV=production
+```
+
+### Option 2: Railway
+
+1. Repository خود را به Railway متصل کنید
+2. Root Directory را `whatsapp-server` تنظیم کنید
+3. Railway خودکار تشخیص می‌دهد
+
+### Option 3: Heroku
+
+1. Heroku CLI نصب کنید
+2. دستورات:
+
+```bash
+cd whatsapp-server
+git init
+heroku create your-whatsapp-server
+git add .
+git commit -m "Deploy WhatsApp server"
+git push heroku main
+```
+
+## API Documentation
+
+### WebSocket Endpoint
+
+```
+wss://your-server.com/session/{sessionId}
+```
+
+### WebSocket Messages
+
+#### شروع session:
 ```json
 {
-  "version": 2,
-  "builds": [
+  "action": "initialize"
+}
+```
+
+#### دریافت مخاطبین:
+```json
+{
+  "action": "getContacts"
+}
+```
+
+#### دریافت پیام‌ها:
+```json
+{
+  "action": "getMessages",
+  "contactId": "1234567890@c.us",
+  "dateFrom": "2024-01-01",
+  "dateTo": "2024-01-31"
+}
+```
+
+#### ارسال پیام:
+```json
+{
+  "action": "sendMessage",
+  "contactId": "1234567890@c.us",
+  "message": "Hello World",
+  "mediaPath": "/path/to/file.jpg" // اختیاری
+}
+```
+
+### Server Events
+
+#### QR Code:
+```json
+{
+  "type": "qr",
+  "qr": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...",
+  "sessionId": "session_123"
+}
+```
+
+#### آماده:
+```json
+{
+  "type": "ready",
+  "sessionId": "session_123",
+  "phoneNumber": "+1234567890",
+  "clientInfo": {
+    "pushname": "My Name",
+    "platform": "web"
+  }
+}
+```
+
+#### مخاطبین:
+```json
+{
+  "type": "contacts",
+  "contacts": [
     {
-      "src": "server.js",
-      "use": "@vercel/node"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/session/(.*)",
-      "dest": "/server.js"
+      "id": "1234567890@c.us",
+      "name": "Contact Name",
+      "number": "1234567890",
+      "pushname": "Push Name"
     }
   ]
 }
 ```
 
-2. دستورات deploy:
-
-```bash
-npm install -g vercel
-vercel --prod
+#### پیام‌ها:
+```json
+{
+  "type": "messages",
+  "messages": [
+    {
+      "id": "message_id",
+      "from": "1234567890@c.us",
+      "body": "Message text",
+      "timestamp": 1640995200,
+      "hasMedia": true,
+      "media": {
+        "data": "base64_data",
+        "mimetype": "image/jpeg",
+        "filename": "image.jpg"
+      }
+    }
+  ],
+  "totalCount": 25,
+  "chatId": "1234567890@c.us"
+}
 ```
 
-### 5. آدرس سرور را در Edge Function تنظیم کنید
+### REST Endpoints
 
-در فایل `supabase/functions/whatsapp-connect/index.ts` خط زیر را با آدرس سرور خود جایگزین کنید:
+#### ایجاد Session:
+```http
+POST /api/session/create
+Response: {
+  "sessionId": "session_123",
+  "websocketUrl": "/session/session_123",
+  "status": "created"
+}
+```
+
+#### وضعیت Session:
+```http
+GET /api/session/{sessionId}/status
+Response: {
+  "connected": true,
+  "authenticated": true,
+  "phoneNumber": "+1234567890",
+  "websocketConnected": true
+}
+```
+
+#### حذف Session:
+```http
+DELETE /api/session/{sessionId}
+Response: {
+  "status": "session_terminated"
+}
+```
+
+#### Health Check:
+```http
+GET /health
+Response: {
+  "status": "healthy",
+  "timestamp": "2024-01-01T00:00:00.000Z"
+}
+```
+
+## پیکربندی در Supabase
+
+پس از استقرار سرور:
+
+1. در Supabase Dashboard > Functions > Settings
+2. Secret جدید `WHATSAPP_SERVER_URL` اضافه کنید:
+
+**Render.com:**
+```
+wss://your-whatsapp-server.onrender.com
+```
+
+**Railway:**
+```
+wss://your-project.railway.app
+```
+
+**Heroku:**
+```
+wss://your-whatsapp-server.herokuapp.com
+```
+
+## مشکلات رایج
+
+### 1. QR Code نمایش نمی‌شود
+```bash
+# بررسی لاگ‌های سرور
+npm run dev
+
+# تست WebSocket
+wscat -c ws://localhost:3001/session/test123
+```
+
+### 2. Memory Issues
+```javascript
+// در package.json اضافه کنید:
+"scripts": {
+  "start": "node --max-old-space-size=1024 server.js"
+}
+```
+
+### 3. Puppeteer در Production
+```javascript
+// اضافه کردن args بیشتر:
+puppeteer: {
+  headless: true,
+  args: [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-accelerated-2d-canvas',
+    '--no-first-run',
+    '--no-zygote',
+    '--single-process',
+    '--disable-gpu',
+    '--disable-background-timer-throttling',
+    '--disable-backgrounding-occluded-windows',
+    '--disable-renderer-backgrounding'
+  ]
+}
+```
+
+### 4. WebSocket Connection Issues
+```javascript
+// بررسی در browser console:
+const ws = new WebSocket('wss://your-server.com/session/test123');
+ws.onopen = () => console.log('Connected');
+ws.onmessage = (event) => console.log('Message:', JSON.parse(event.data));
+```
+
+## مانیتورینگ و لاگ‌ها
+
+سرور اطلاعات زیر را لاگ می‌کند:
+- اتصالات WebSocket جدید
+- تولید QR Code
+- وضعیت احراز هویت
+- تعداد session های فعال
+- خطاها و exceptions
+
+## محدودیت‌ها و توجهات
+
+- **منابع سرور:** حداقل 1GB RAM برای Puppeteer
+- **Session Limit:** تعداد session محدود به منابع سرور
+- **WhatsApp Rate Limits:** محدودیت‌های واتس‌اپ برای استفاده خودکار
+- **Media Size:** محدودیت سایز فایل‌های رسانه
+- **Network:** وابستگی به پایداری اتصال
+
+## امنیت
+
+- Session IDs منحصر به فرد و تصادفی
+- Auto cleanup برای session های غیرفعال  
+- CORS محافظت برای درخواست‌های cross-origin
+- Local authentication برای هر session
+
+## Performance Optimization
 
 ```javascript
-const wsUrl = `wss://your-whatsapp-server.vercel.app/session/${this.sessionId}`
+// تنظیمات بهینه برای production:
+const client = new Client({
+  authStrategy: new LocalAuth({ clientId: sessionId }),
+  puppeteer: {
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    // محدود کردن منابع:
+    defaultViewport: { width: 1280, height: 720 },
+    slowMo: 0
+  }
+});
+
+// Cleanup job برای session های قدیمی:
+setInterval(cleanupOldSessions, 30 * 60 * 1000); // هر 30 دقیقه
 ```
 
-## نکات مهم
+## Development Tips
 
-- اطمینان حاصل کنید که سرور همیشه در دسترس باشد
-- برای production استفاده، سرور را روی پلتفرم قابل اعتماد deploy کنید
-- QR code هر بار که سرور restart شود باید دوباره اسکن شود
-- جلسات واتس‌اپ تا زمانی که logout نکنید باقی می‌مانند
+```bash
+# تست local:
+npm run dev
+# در browser دیگر:
+http://localhost:3001/health
 
-## عیب‌یابی
+# Debug WebSocket:
+npm install -g wscat
+wscat -c ws://localhost:3001/session/debug123
+```
 
-- اگر QR code نمایش داده نمی‌شود، بررسی کنید سرور در حال اجرا باشد
-- اگر اتصال برقرار نمی‌شود، فایروال و تنظیمات شبکه را بررسی کنید
-- برای مشاهده جزئیات خطاها، console logs را چک کنید
+## پشتیبانی
+
+- لاگ‌های کامل در console
+- Health check endpoint برای monitoring
+- WebSocket events برای debugging
+- REST API برای وضعیت session ها
+
+برای گزارش مشکل یا ویژگی جدید، GitHub issue ایجاد کنید.
