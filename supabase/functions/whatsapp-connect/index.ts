@@ -21,8 +21,11 @@ class WhatsAppWebSession {
   async initializeSession(): Promise<{ qrCode: string; status: string }> {
     try {
       // Initialize WhatsApp Web connection using WebSocket to whatsapp-web.js server
-      // This would connect to a separate Node.js server running whatsapp-web.js
-      const wsUrl = `wss://whatsapp-server.vercel.app/session/${this.sessionId}`
+      // Use the deployed WhatsApp server URL or local for development
+      const serverUrl = Deno.env.get('WHATSAPP_SERVER_URL') || 'wss://your-whatsapp-server.onrender.com'
+      const wsUrl = `${serverUrl}/session/${this.sessionId}`
+      
+      console.log(`Connecting to WhatsApp server: ${wsUrl}`)
       
       return new Promise((resolve, reject) => {
         this.websocket = new WebSocket(wsUrl)
@@ -39,35 +42,52 @@ class WhatsAppWebSession {
           switch (data.type) {
             case 'qr':
               this.qrCode = data.qr
+              console.log(`QR code received for session ${this.sessionId}`)
               resolve({ qrCode: data.qr, status: 'waiting_for_scan' })
               break
             case 'ready':
               this.isConnected = true
               this.phoneNumber = data.phoneNumber
+              console.log(`WhatsApp ready for session ${this.sessionId}, phone: ${data.phoneNumber}`)
               break
             case 'authenticated':
               this.isConnected = true
+              console.log(`WhatsApp authenticated for session ${this.sessionId}`)
               break
             case 'disconnected':
               this.isConnected = false
+              console.log(`WhatsApp disconnected for session ${this.sessionId}`)
               break
             case 'auth_failure':
+              console.error(`WhatsApp auth failure for session ${this.sessionId}`)
               reject(new Error('Authentication failed'))
+              break
+            case 'error':
+              console.error(`WhatsApp error for session ${this.sessionId}:`, data.message)
+              reject(new Error(data.message || 'Unknown error'))
               break
           }
         }
 
         this.websocket.onerror = (error) => {
-          console.error('WhatsApp WebSocket error:', error)
-          reject(error)
+          console.error(`WhatsApp WebSocket error for session ${this.sessionId}:`, error)
+          reject(new Error('WebSocket connection failed'))
         }
 
-        // Timeout after 30 seconds if no QR code received
+        this.websocket.onclose = (event) => {
+          console.log(`WhatsApp WebSocket closed for session ${this.sessionId}:`, event.code, event.reason)
+          if (!this.qrCode && !this.isConnected) {
+            reject(new Error('WebSocket connection closed unexpectedly'))
+          }
+        }
+
+        // Timeout after 45 seconds if no QR code received
         setTimeout(() => {
-          if (!this.qrCode) {
+          if (!this.qrCode && !this.isConnected) {
+            this.websocket?.close()
             reject(new Error('QR code generation timeout'))
           }
-        }, 30000)
+        }, 45000)
       })
     } catch (error) {
       console.error('Failed to initialize WhatsApp session:', error)
@@ -81,13 +101,20 @@ class WhatsAppWebSession {
     }
 
     return new Promise((resolve, reject) => {
+      console.log(`Getting contacts for session ${this.sessionId}`)
       this.websocket?.send(JSON.stringify({ action: 'getContacts' }))
       
       const handleMessage = (event: MessageEvent) => {
         const data = JSON.parse(event.data)
+        console.log('Contacts response:', data.type)
+        
         if (data.type === 'contacts') {
           this.websocket?.removeEventListener('message', handleMessage)
-          resolve(data.contacts)
+          console.log(`Received ${data.contacts?.length || 0} contacts`)
+          resolve(data.contacts || [])
+        } else if (data.type === 'error') {
+          this.websocket?.removeEventListener('message', handleMessage)
+          reject(new Error(data.message || 'Failed to get contacts'))
         }
       }
 
@@ -96,7 +123,7 @@ class WhatsAppWebSession {
       setTimeout(() => {
         this.websocket?.removeEventListener('message', handleMessage)
         reject(new Error('Get contacts timeout'))
-      }, 10000)
+      }, 15000)
     })
   }
 
@@ -106,6 +133,8 @@ class WhatsAppWebSession {
     }
 
     return new Promise((resolve, reject) => {
+      console.log(`Extracting messages for contact ${contactId} from ${dateFrom} to ${dateTo}`)
+      
       this.websocket?.send(JSON.stringify({ 
         action: 'getMessages',
         contactId,
@@ -115,9 +144,15 @@ class WhatsAppWebSession {
       
       const handleMessage = (event: MessageEvent) => {
         const data = JSON.parse(event.data)
+        console.log('Messages response:', data.type)
+        
         if (data.type === 'messages') {
           this.websocket?.removeEventListener('message', handleMessage)
-          resolve(data.messages)
+          console.log(`Received ${data.messages?.length || 0} messages`)
+          resolve(data.messages || [])
+        } else if (data.type === 'error') {
+          this.websocket?.removeEventListener('message', handleMessage)
+          reject(new Error(data.message || 'Failed to extract messages'))
         }
       }
 
@@ -125,8 +160,8 @@ class WhatsAppWebSession {
       
       setTimeout(() => {
         this.websocket?.removeEventListener('message', handleMessage)
-        reject(new Error('Extract messages timeout'))
-      }, 30000)
+        reject(new Error('Extract messages timeout - operation took too long'))
+      }, 60000) // Increased timeout for message extraction
     })
   }
 
